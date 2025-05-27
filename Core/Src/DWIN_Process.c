@@ -1,0 +1,2172 @@
+/*
+ * DWIN_Process.c
+ *
+ *  Created on: Jan 20, 2025
+ *      Author: Step
+ */
+
+
+#include "usart.h"
+#include "USART_Process.h"
+#include "DWIN_Process.h"
+#include "SEGGER_RTT.h"
+#include "Temperature_Process.h"
+#include "string.h"
+#include "InOut_Process.h"
+#include "rtc.h"
+#include "EEPROM_Process.h"
+#include "PID_Control.h"
+#include "hdc1080.h"
+
+extern TemperatureData temp;
+extern uint8_t DWIN_rxBuffer[DWIN_rxBufferSize];
+extern uint8_t main_DWIN_rxBuffer[DWIN_rxBufferSize];
+
+extern USART_TypeDef *DWIN_usartDeclaration;
+extern UART_HandleTypeDef *DWIN_huart_channel;
+extern DMA_HandleTypeDef *DWIN_hdma_usart_purpose;
+extern DMA_HandleTypeDef hdma_usart3_rx;
+extern I2C_HandleTypeDef hi2c1;
+
+extern usartInfo DWIN;
+
+extern uint16_t eepromAddrTable[7];
+
+extern uint8_t rxBusyFlag;
+
+tickCounter counterTick;
+
+volatile uint16_t registerTable[9000];
+
+
+
+
+uint16_t pisirmeManuelDownCounter 	= 0;
+uint16_t buharManuelDownCounter 	= 0;
+
+uint8_t rtcSecondPisirme 	= 0;
+uint8_t rtcSecondBuhar 		= 0;
+
+uint8_t pisirmeSonuAlarmFlag = 0;
+uint8_t pisirmeSonuAlarmBuzzer = 0;
+
+uint8_t wrongmsg_flag = 0;
+uint8_t wrongmsg_buffer[20];
+
+uint8_t ustSicaklikProcess = 99;
+uint8_t altSicaklikProcess = 99;
+
+uint8_t ustOnTurbo 		= 0;
+uint8_t ustArkaTurbo 	= 0;
+uint8_t altTurbo		= 0;
+uint8_t turboCloseFlag	= 0;
+
+uint16_t alarmBuzzerPeriod = 1000;
+
+// 8 bitlik iki sayıyı 16 bitlik bir sayıya birleştiren fonksiyon
+uint16_t combineBytes(uint8_t highByte, uint8_t lowByte) {
+    return ((uint16_t)highByte << 8) | lowByte;
+}
+
+void parse16BitTo8Bit(uint16_t value, uint8_t *highByte, uint8_t *lowByte) {
+    *highByte = (uint8_t)(value >> 8);  // Yüksek byte (MSB)
+    *lowByte = (uint8_t)(value & 0xFF); // Düşük byte (LSB)
+}
+
+void convert_u8_to_u16(const uint8_t src[20], uint16_t dest[10])
+{
+    for (int i = 0; i < 10; i++)
+    {
+        dest[i] = ((uint16_t)src[2 * i] << 8) | src[2 * i + 1];
+    }
+}
+
+void convert_u16_to_u8(const uint16_t src[10], uint8_t dest[20])
+{
+    for (int i = 0; i < 10; i++)
+    {
+        dest[2 * i + 1]     = (uint8_t)(src[i] & 0xFF);       // Lower byte
+        dest[2 * i] = (uint8_t)((src[i] >> 8) & 0xFF);        // Higher byte
+    }
+}
+
+uint16_t calculateCRC16Modbus(uint8_t *data, uint16_t length) {
+    uint16_t crc = 0xFFFF; // Başlangıç değeri
+
+    for (uint16_t i = 0; i < length; i++) {
+        crc ^= data[i]; // İlk veri byte'ı ile XOR işlemi
+        for (uint8_t j = 0; j < 8; j++) {
+            if (crc & 0x0001) {
+                crc = (crc >> 1) ^ 0xA001; // Polinom: x^16 + x^15 + x^2 + 1
+            } else {
+                crc >>= 1;
+            }
+        }
+    }
+
+    return crc;
+}
+
+
+DWIN_Response DWIN_receiveDataProcess(void)
+{
+	DWIN_Response response = NO_RESPONSE;
+
+	if((DWIN_rxBuffer[0] == 0x5A) && (DWIN_rxBuffer[1] == 0xA5))
+	{
+		uint8_t size = DWIN_rxBuffer[2]+3;
+
+		if((DWIN_rxBuffer[size] == 0x5A) && (DWIN_rxBuffer[size + 3] == READ_CMD))
+		{
+			size = DWIN_rxBuffer[size + 2] + 3;
+
+			uint8_t secondBufferstartAdr = DWIN_rxBuffer[2]+3;
+
+			for(int i=secondBufferstartAdr;i<secondBufferstartAdr+size;i++)
+			{
+				DWIN_rxBuffer[i - secondBufferstartAdr] = DWIN_rxBuffer[i];
+			}
+
+			#if DEBUG_DWIN == 1
+			SEGGER_RTT_printf(0," write and read ! \r\n");
+			#endif
+		}
+
+		uint8_t crcBuffer[(uint8_t)(DWIN_rxBuffer[2]-2)];
+
+		for(int i=0;i<DWIN_rxBuffer[2]-2;i++)
+			crcBuffer[i] = DWIN_rxBuffer[i+3];
+
+		uint16_t crc = calculateCRC16Modbus(crcBuffer, sizeof(crcBuffer));
+
+		uint16_t crcRx = combineBytes(DWIN_rxBuffer[size-1], DWIN_rxBuffer[size-2]);
+
+		if(crc == crcRx)
+		{
+			if(DWIN_rxBuffer[3] == WRITE_CMD)
+				response = WRITE_OK;
+
+			if(DWIN_rxBuffer[3] == READ_CMD)
+			{
+				uint16_t addr = combineBytes(DWIN_rxBuffer[4], DWIN_rxBuffer[5]);
+
+				if((addr != 0x979A) && (addr != 0x0084) && (addr != 0x7200))
+				{
+					#if DEBUG_DWIN == 1
+					SEGGER_RTT_printf(0,"---------------------------\r\nAddr   : %x %x \r\n",DWIN_rxBuffer[4],DWIN_rxBuffer[5]);
+
+					for(int i=0;i<DWIN_rxBuffer[6];i++)
+						SEGGER_RTT_printf(0,"Data %d : %x %x \r\n",i+1,DWIN_rxBuffer[7+(i*2)],DWIN_rxBuffer[8+(i*2)]);
+
+					#endif
+
+					response = READ_OK;
+				}
+			}
+		}
+
+		else
+		{
+			#if DEBUG_DWIN == 1
+			SEGGER_RTT_printf(0," CRC ERROR ! \r\n");
+			#endif
+
+			response = CRC_ERROR;
+		}
+
+	}
+	else
+	{
+
+		#if DEBUG_DWIN == 1
+		SEGGER_RTT_printf(0," False Message ! \r\n");
+		wrongmsg_flag = 1;
+
+		for(int i=0;i<20;i++)
+			wrongmsg_buffer[i] = DWIN_rxBuffer[i];
+
+		#endif
+	}
+
+	return response;
+}
+
+HAL_StatusTypeDef DWIN_SetUsartChannel(UART_HandleTypeDef *huart, USART_TypeDef *Declaration, DMA_HandleTypeDef *hdma)
+{
+	HAL_StatusTypeDef response;
+
+	DWIN_usartDeclaration = Declaration;
+	DWIN_huart_channel = huart;
+	DWIN_hdma_usart_purpose = hdma;
+
+
+//	response = HAL_UARTEx_ReceiveToIdle_DMA(huart, DWIN_rxBuffer, DWIN_rxBufferSize);
+//	__HAL_DMA_DISABLE_IT(DWIN_hdma_usart_purpose, DMA_IT_HT);
+
+	  response = HAL_UART_Receive_DMA(huart, main_DWIN_rxBuffer, DWIN_rxBufferSize);
+
+	//__HAL_UART_CLEAR_IT(huart, UART_CLEAR_IDLEF);
+	__HAL_UART_CLEAR_IDLEFLAG(huart);
+	__HAL_UART_ENABLE_IT(huart, UART_IT_IDLE);
+
+
+	return response;
+}
+
+DWIN_Response DWIN_readRegister(uint8_t* pBuffer, uint16_t addr, uint8_t len)
+{
+	DWIN_Response response = NO_RESPONSE;
+
+	uint8_t numOfRegister = len / 2;
+
+	uint8_t txBuffer[numOfRegister + 8];
+
+	txBuffer[0] = 0x5A;
+	txBuffer[1] = 0xA5;
+	txBuffer[2] = 0x06;
+	txBuffer[3] = 0x83;
+
+	uint8_t highByte, lowByte;
+    highByte 	= (addr >> 8) & 0xFF;
+    lowByte 	= addr & 0xFF;
+
+	txBuffer[4] = highByte;
+	txBuffer[5] = lowByte;
+	txBuffer[6] = numOfRegister;
+
+	uint8_t crcBuffer[4];
+
+	for(int i=3;i<7;i++)
+		crcBuffer[i-3] = txBuffer[i];
+
+	uint16_t crc = calculateCRC16Modbus(crcBuffer, sizeof(crcBuffer));
+
+	txBuffer[7] = crc & 0xFF;
+	txBuffer[8] = (crc >> 8) & 0xFF;
+
+	uint8_t numOfAttempts = 0;
+
+	sendPoint:
+
+	//DWIN.receiveStatus = NO_RESPONSE;
+	memset(DWIN_rxBuffer,0,sizeof(DWIN_rxBuffer));
+
+	DWIN.rxDoneFlag = 0;
+	HAL_UART_Transmit_IT(DWIN_huart_channel, txBuffer, sizeof(txBuffer));
+	numOfAttempts++;
+
+	uint32_t timeOut = HAL_GetTick();
+	while((DWIN.rxDoneFlag != 1)&&((HAL_GetTick() - timeOut)<=TIMEOUT_MS));
+
+	if(((HAL_GetTick() - timeOut) <= TIMEOUT_MS)&&(numOfAttempts <= MAX_ATTEMPT))
+	{
+		response = DWIN_receiveDataProcess();
+
+		if(response == READ_OK)
+		{
+			for(int i=0;i<(numOfRegister*2);i++)
+				pBuffer[i] = DWIN_rxBuffer[i+7];
+
+			DWIN.rxDoneFlag = 0;
+		}
+		else
+		{
+			#if DEBUG_DWIN == 1
+			SEGGER_RTT_printf(0,"DWIN CRC ERROR \r\n");
+			#endif
+
+			goto sendPoint;
+		}
+
+	}
+
+	else
+	{
+		if(numOfAttempts <= MAX_ATTEMPT)
+		{
+			#if DEBUG_DWIN == 1
+			SEGGER_RTT_printf(0,"DWIN NO RESPONSE \r\n");
+			#endif
+
+			goto sendPoint;
+		}
+
+		DWIN.rxDoneFlag = 0;
+		DWIN.Init = 0;
+	}
+
+	return response;
+
+}
+
+void changeMaxSetValue(uint16_t maxValue)
+{
+	HAL_Delay(20);
+
+	for(int i=0;i<3;i++)
+	{
+		uint8_t txBuffer[48];
+		uint16_t addr = 0x00B0;
+
+		txBuffer[0] = 0x5A;
+		txBuffer[1] = 0xA5;
+		txBuffer[2] = 0x2D;
+		txBuffer[3] = 0x82;
+
+		uint8_t highByte, lowByte;
+		highByte 	= (addr >> 8) & 0xFF;
+		lowByte 	= addr & 0xFF;
+
+		txBuffer[4] = highByte;
+		txBuffer[5] = lowByte;
+
+		txBuffer[6] 	= 0x5A;
+		txBuffer[7] 	= 0xA5;
+
+		txBuffer[8] 	= 0x00;
+		txBuffer[9] 	= 0x05+i;
+
+		txBuffer[10] 	= 0x01;
+		txBuffer[11] 	= 0x02;
+
+		txBuffer[12] 	= 0x00;
+		txBuffer[13] 	= 0x03;
+
+		txBuffer[14] 	= 0x00;
+		txBuffer[15] 	= 0x05+i;
+
+		txBuffer[16] 	= 0x02;
+		txBuffer[17] 	= 0x04;
+
+		txBuffer[18] 	= 0x02;
+		txBuffer[19] 	= 0x44;
+
+		txBuffer[20] 	= 0x02;
+		txBuffer[21] 	= 0x7F;
+
+		txBuffer[22] 	= 0x02;
+		txBuffer[23] 	= 0xC7;
+
+		txBuffer[24] 	= 0xFF;
+		txBuffer[25] 	= 0x00;
+
+		txBuffer[26] 	= 0xFF;
+		txBuffer[27] 	= 0x00;
+
+		txBuffer[28] 	= 0xFD;
+		txBuffer[29] 	= 0x02;
+
+		txBuffer[30] 	= 0xFE;
+
+		txBuffer[31] 	= 0x10;
+		txBuffer[32] 	= 0x64+(i*2);
+
+		txBuffer[33] 	= 0x00;
+
+		txBuffer[34] 	= 0x01;
+
+		txBuffer[35] 	= 0x01;
+
+		txBuffer[36] 	= 0x00;
+		txBuffer[37] 	= 0x01;
+
+		txBuffer[38] 	= 0x00;
+		txBuffer[39] 	= 0x00;
+
+		highByte 		= (maxValue >> 8) & 0xFF;
+		lowByte 		= maxValue & 0xFF;
+
+		txBuffer[40] 	= highByte;
+		txBuffer[41] 	= lowByte;
+
+		txBuffer[42] 	= 0x00;
+		txBuffer[43] 	= 0x00;
+		txBuffer[44] 	= 0x00;
+		txBuffer[45] 	= 0x00;
+
+		uint8_t crcBuffer[43];
+
+		for(int i=3;i<46;i++)
+			crcBuffer[i-3] = txBuffer[i];
+
+		uint16_t crc = calculateCRC16Modbus(crcBuffer, sizeof(crcBuffer));
+
+		txBuffer[46] = crc & 0xFF;
+		txBuffer[47] = (crc >> 8) & 0xFF;
+
+
+		HAL_UART_Transmit_IT(DWIN_huart_channel, txBuffer, sizeof(txBuffer));
+
+		HAL_Delay(40);
+
+	}
+
+	for(int i=0;i<3;i++)
+	{
+		uint8_t txBuffer[48];
+		uint16_t addr = 0x00B0;
+
+		txBuffer[0] = 0x5A;
+		txBuffer[1] = 0xA5;
+		txBuffer[2] = 0x2D;
+		txBuffer[3] = 0x82;
+
+		uint8_t highByte, lowByte;
+		highByte 	= (addr >> 8) & 0xFF;
+		lowByte 	= addr & 0xFF;
+
+		txBuffer[4] = highByte;
+		txBuffer[5] = lowByte;
+
+		txBuffer[6] 	= 0x5A;
+		txBuffer[7] 	= 0xA5;
+
+		txBuffer[8] 	= 0x00;
+		txBuffer[9] 	= 0x05+i;
+
+		txBuffer[10] 	= 0x00;
+		txBuffer[11] 	= 0x02;
+
+		txBuffer[12] 	= 0x00;
+		txBuffer[13] 	= 0x03;
+
+		txBuffer[14] 	= 0x00;
+		txBuffer[15] 	= 0x05+i;
+
+		txBuffer[16] 	= 0x00;
+		txBuffer[17] 	= 0xA7;
+
+		txBuffer[18] 	= 0x02;
+		txBuffer[19] 	= 0x45;
+
+		txBuffer[20] 	= 0x01;
+		txBuffer[21] 	= 0x22;
+
+		txBuffer[22] 	= 0x02;
+		txBuffer[23] 	= 0xC8;
+
+		txBuffer[24] 	= 0xFF;
+		txBuffer[25] 	= 0x00;
+
+		txBuffer[26] 	= 0xFF;
+		txBuffer[27] 	= 0x00;
+
+		txBuffer[28] 	= 0xFD;
+		txBuffer[29] 	= 0x02;
+
+		txBuffer[30] 	= 0xFE;
+
+		txBuffer[31] 	= 0x10;
+		txBuffer[32] 	= 0x64+(i*2);
+
+		txBuffer[33] 	= 0x00;
+
+		txBuffer[34] 	= 0x00;
+
+		txBuffer[35] 	= 0x01;
+
+		txBuffer[36] 	= 0x00;
+		txBuffer[37] 	= 0x01;
+
+		txBuffer[38] 	= 0x00;
+		txBuffer[39] 	= 0x00;
+
+		highByte 		= (maxValue >> 8) & 0xFF;
+		lowByte 		= maxValue & 0xFF;
+
+		txBuffer[40] 	= highByte;
+		txBuffer[41] 	= lowByte;
+
+		txBuffer[42] 	= 0x00;
+		txBuffer[43] 	= 0x00;
+		txBuffer[44] 	= 0x00;
+		txBuffer[45] 	= 0x00;
+
+		uint8_t crcBuffer[43];
+
+		for(int i=3;i<46;i++)
+			crcBuffer[i-3] = txBuffer[i];
+
+		uint16_t crc = calculateCRC16Modbus(crcBuffer, sizeof(crcBuffer));
+
+		txBuffer[46] = crc & 0xFF;
+		txBuffer[47] = (crc >> 8) & 0xFF;
+
+
+		HAL_UART_Transmit_IT(DWIN_huart_channel, txBuffer, sizeof(txBuffer));
+
+		HAL_Delay(40);
+
+	}
+
+	memset(DWIN_rxBuffer,0,sizeof(DWIN_rxBuffer));
+	DWIN.rxDoneFlag = 0;
+
+}
+
+DWIN_Response DWIN_writeRegiser(uint16_t* pBuffer, uint16_t addr, uint8_t len)
+{
+	DWIN_Response response = NO_RESPONSE;
+
+	uint8_t numOfRegister = len / 2;
+
+	uint8_t txBuffer[(numOfRegister*2) + 8];
+
+
+	txBuffer[0] = 0x5A;
+	txBuffer[1] = 0xA5;
+	txBuffer[2] = 0x05 + (numOfRegister*2);
+	txBuffer[3] = 0x82;
+
+	uint8_t highByte, lowByte;
+    highByte 	= (addr >> 8) & 0xFF;
+    lowByte 	= addr & 0xFF;
+
+	txBuffer[4] = highByte;
+	txBuffer[5] = lowByte;
+
+	for(int i=0;i<numOfRegister;i++)
+	{
+		uint16_t writeData = pBuffer[i];
+
+		uint8_t highByte, lowByte;
+
+	    highByte 	= (writeData >> 8) & 0xFF;
+	    lowByte 	= writeData & 0xFF;
+
+		txBuffer[6+(i*2)] = highByte;
+		txBuffer[7+(i*2)] = lowByte;
+
+	}
+
+	uint8_t crcBuffer[3+(numOfRegister*2)];
+
+	for(int i=3;i<6+(numOfRegister*2);i++)
+		crcBuffer[i-3] = txBuffer[i];
+
+
+	uint16_t crc = calculateCRC16Modbus(crcBuffer,3+(numOfRegister*2));
+
+	txBuffer[8+((numOfRegister-1)*2)] = crc & 0xFF;
+	txBuffer[9+((numOfRegister-1)*2)] = (crc >> 8) & 0xFF;
+
+	uint8_t numOfAttempts = 0;
+
+	sendPoint:
+
+	if(DWIN.rxDoneFlag != 1)
+	{
+		if(__HAL_UART_GET_FLAG(&huart3,UART_FLAG_IDLE) == 0)
+		{
+			if (huart3.gState == HAL_UART_STATE_READY)
+			{
+
+				for(int i=0;i<50;i++)
+					DWIN_rxBuffer[i] = 0;
+
+				DWIN.rxDoneFlag = 0;
+				HAL_UART_Transmit_IT(DWIN_huart_channel, txBuffer, sizeof(txBuffer));
+				numOfAttempts++;
+			}
+		}
+
+
+		uint32_t timeOut = HAL_GetTick();
+		while((DWIN.rxDoneFlag != 1)&&((HAL_GetTick() - timeOut)<=TIMEOUT_MS));
+
+		if(((HAL_GetTick() - timeOut) <= TIMEOUT_MS)&&(numOfAttempts <= MAX_ATTEMPT))
+		{
+			response = DWIN_receiveDataProcess();
+
+			if(response == WRITE_OK)
+				DWIN.rxDoneFlag = 0;
+
+			else if(response != READ_OK)
+			{
+				#if DEBUG_DWIN == 1
+				SEGGER_RTT_printf(0,"DWIN WRITE ERROR \r\n");
+				#endif
+
+
+				goto sendPoint;
+			}
+		}
+		else
+		{
+			if(numOfAttempts <= MAX_ATTEMPT)
+			{
+				#if DEBUG_DWIN == 1
+				SEGGER_RTT_printf(0,"DWIN NO RESPONSE \r\n");
+				#endif
+
+				goto sendPoint;
+			}
+
+			DWIN.Init = 0;
+			DWIN.rxDoneFlag = 0;
+		}
+
+	}
+
+
+	return response;
+}
+
+DWIN_Response DWIN_changePage(uint8_t pageNumber)
+{
+	DWIN_Response response = NO_RESPONSE;
+
+	uint8_t txBuffer[12];
+
+	txBuffer[0] = 0x5A;
+	txBuffer[1] = 0xA5;
+	txBuffer[2] = 0x09;
+	txBuffer[3] = 0x82;
+	txBuffer[4] = 0x00;
+	txBuffer[5] = 0x84;
+	txBuffer[6] = 0x5A;
+	txBuffer[7] = 0x01;
+
+	uint8_t highByte, lowByte;
+    highByte 	= (pageNumber >> 8) & 0xFF;
+    lowByte 	= pageNumber & 0xFF;
+
+	txBuffer[8] = highByte;
+	txBuffer[9] = lowByte;
+
+	uint8_t crcBuffer[7];
+
+	for(int i=3;i<10;i++)
+		crcBuffer[i-3] = txBuffer[i];
+
+	uint16_t crc = calculateCRC16Modbus(crcBuffer,7);
+
+	txBuffer[10] = crc & 0xFF;
+	txBuffer[11] = (crc >> 8) & 0xFF;
+
+	uint8_t numOfAttempts = 0;
+
+	sendPoint:
+
+	//DWIN.receiveStatus = NO_RESPONSE;
+	memset(DWIN_rxBuffer,0,sizeof(DWIN_rxBuffer));
+
+	DWIN.rxDoneFlag = 0;
+	HAL_UART_Transmit(DWIN_huart_channel, txBuffer, sizeof(txBuffer), 100);
+	numOfAttempts++;
+
+	uint32_t timeOut = HAL_GetTick();
+	while((DWIN.rxDoneFlag != 1)&&((HAL_GetTick() - timeOut)<=TIMEOUT_MS));
+
+	if(((HAL_GetTick() - timeOut) <= TIMEOUT_MS)&&(numOfAttempts <= MAX_ATTEMPT))
+	{
+		response = DWIN_receiveDataProcess();
+
+		if(response == WRITE_OK)
+			DWIN.rxDoneFlag = 0;
+
+		else if(response != READ_OK)
+		{
+			#if DEBUG_DWIN == 1
+			SEGGER_RTT_printf(0,"DWIN WRITE ERROR \r\n");
+			#endif
+
+
+			goto sendPoint;
+		}
+	}
+	else
+	{
+		if(numOfAttempts <= MAX_ATTEMPT)
+		{
+			#if DEBUG_DWIN == 1
+			SEGGER_RTT_printf(0,"DWIN NO RESPONSE \r\n");
+			#endif
+
+			goto sendPoint;
+		}
+
+		DWIN.Init = 0;
+		DWIN.rxDoneFlag = 0;
+	}
+
+	return response;
+
+}
+
+
+void DWIN_run(void)
+{
+	if((HAL_GetTick() - counterTick.run) >= 1000)
+	{
+		counterTick.run = HAL_GetTick();
+
+		HAL_GPIO_TogglePin(RUN_LED);
+
+		if(DWIN.Init == 1)
+		{
+//			uint8_t testbuffer[20];
+//			DWIN_readRegister(testbuffer, 0x115F+(0*10), 20);
+//			SEGGER_RTT_printf(0,"recete name : %s\r\n",testbuffer);
+
+
+			calculate_temperature();
+
+			registerTable[DW_MCP9700_ADR] 		= temp.TMP;
+			registerTable[DW_UST_SICAKLIK_ADR] 	= temp.TC3;
+			registerTable[DW_ALT_SICAKLIK_ADR] 	= temp.TC2;
+
+			uint16_t sendData[3] = {(uint16_t)temp.TMP,temp.TC3,temp.TC2};
+			DWIN_writeRegiser(sendData, DW_MCP9700_ADR,sizeof(sendData));
+
+			if(registerTable[DW_MANUEL_MOD_GIRIS_ADR] == 1)
+			{
+				DWIN_arızaCheck();
+
+				if(registerTable[DW_ARIZA_PAGE_ADR] != 1)
+				{
+					DWIN_manuelProcess();
+					DWIN_manuelTurboProcess();
+
+					PID_Run();
+				}
+
+			}
+
+		}
+
+	}
+
+	if((HAL_GetTick() - counterTick.shiftRefreshWait) >= 5)
+	{
+		counterTick.shiftRefreshWait = HAL_GetTick();
+		pwmOutProcess();
+	}
+
+	#if DEBUG_DWIN == 1
+	if(wrongmsg_flag == 1)
+	{
+		SEGGER_RTT_printf(0,"wrong msg : ");
+
+		for(int i=0;i<20;i++)
+		{
+			HAL_Delay(0);
+			SEGGER_RTT_printf(0," %x ",wrongmsg_buffer[i]);
+		}
+
+		SEGGER_RTT_printf(0,"\r\n");
+
+		wrongmsg_flag = 0;
+		memset(wrongmsg_buffer,0,sizeof(wrongmsg_buffer));
+	}
+	#endif
+
+	DWIN_check();
+	DWIN_answerProcess();
+	DWIN_manuelPisirmeSuresi();
+	DWIN_manuelBuharSuresi();
+	DWIN_pisirmeSonuAlarm();
+	DWIN_lambaSuresi();
+	DWIN_manuelPeriodProcess();
+	DWIN_buharHazirCheck();
+}
+void DWIN_manuelPeriodProcess(void)
+{
+	if(ustSicaklikProcess == 1)
+	{
+		uint32_t period 	= registerTable[DW_ISITICI_PERIOD_ADR] * 1000;
+		uint32_t ustOnSet 	= registerTable[DW_UST_ON_SET_ADR]*1000;
+		uint32_t ustArkaSet = registerTable[DW_UST_ARKA_SET_ADR]*1000;
+
+		if(ustOnTurbo != 1)
+		{
+			if(((HAL_GetTick() - counterTick.ustOnPeriod) >= ustOnSet) && (registerTable[DW_UST_ON_ANIM] == 1))
+			{
+				uint16_t data = 0;
+
+				setOut(K1, data);
+				registerTable[DW_UST_ON_ANIM] = data;
+				DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
+			}
+			if(((HAL_GetTick() - counterTick.ustOnPeriod) >= period) && (registerTable[DW_UST_ON_ANIM] == 0))
+			{
+				uint16_t data = 1;
+
+				setOut(K1, data);
+				registerTable[DW_UST_ON_ANIM] = data;
+				registerTable[DW_UST_SICAKLIK_ANIM] = data;
+
+				DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
+				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+
+				counterTick.ustOnPeriod = HAL_GetTick();
+			}
+		}
+
+		if(ustArkaTurbo != 1)
+		{
+			if(((HAL_GetTick() - counterTick.ustArkaPeriod) >= ustArkaSet) && (registerTable[DW_UST_ARKA_ANIM] == 1))
+			{
+				uint16_t data = 0;
+
+				setOut(K3, data);
+				registerTable[DW_UST_ARKA_ANIM] = data;
+				DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
+			}
+			if(((HAL_GetTick() - counterTick.ustArkaPeriod) >= period) && (registerTable[DW_UST_ARKA_ANIM] == 0))
+			{
+				uint16_t data = 1;
+
+				setOut(K3, data);
+				registerTable[DW_UST_ARKA_ANIM] = data;
+				registerTable[DW_UST_SICAKLIK_ANIM] = data;
+
+				DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
+				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+
+				counterTick.ustArkaPeriod = HAL_GetTick();
+			}
+		}
+
+		if((registerTable[DW_UST_ARKA_ANIM] == 0) && (registerTable[DW_UST_ON_ANIM] == 0) && (registerTable[DW_UST_SICAKLIK_ANIM] == 1))
+		{
+			uint16_t data = 0;
+
+			registerTable[DW_UST_SICAKLIK_ANIM] = data;
+			DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+		}
+	}
+
+	if((altSicaklikProcess == 1)&&(altTurbo != 1))
+	{
+		uint32_t period 	= registerTable[DW_ISITICI_PERIOD_ADR] * 1000;
+		uint32_t altSet		= registerTable[DW_ALT_SET_ADR]*1000;
+
+		if(((HAL_GetTick() - counterTick.altPeriod) >= altSet) && (registerTable[DW_ALT_ANIM] == 1))
+		{
+			uint16_t data = 0;
+
+			setOut(K5|K6, data);
+			registerTable[DW_ALT_ANIM] = data;
+			registerTable[DW_ALT_SICAKLIK_ANIM] = data;
+
+			DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
+			DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
+		}
+
+		if(((HAL_GetTick() - counterTick.altPeriod) >= period) && (registerTable[DW_ALT_ANIM] == 0))
+		{
+			uint16_t data = 1;
+
+			setOut(K5|K6, data);
+			registerTable[DW_ALT_ANIM] = data;
+			registerTable[DW_ALT_SICAKLIK_ANIM] = data;
+
+			DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
+			DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
+
+			counterTick.altPeriod = HAL_GetTick();
+		}
+	}
+}
+
+
+void DWIN_manuelTurboProcess(void)
+{
+	if(registerTable[DW_TURBO_ADR] == 1)
+	{
+		uint16_t ustSicaklikSet 	= registerTable[DW_UST_SICAKLIK_SET_ADR];
+		uint16_t altSicaklikSet 	= registerTable[DW_ALT_SICAKLIK_SET_ADR];
+		uint16_t ustSicaklik 		= registerTable[DW_UST_SICAKLIK_ADR];
+		uint16_t altSicaklik 		= registerTable[DW_ALT_SICAKLIK_ADR];
+		uint16_t ustOnIsiticiBand 	= registerTable[DW_UST_ON_ISITICI_BANDI_ADR];
+		uint16_t ustArkaIsiticiBand = registerTable[DW_UST_ARKA_ISITICI_BANDI_ADR];
+		uint16_t altIsiticiBand		= registerTable[DW_ALT_ISITICI_BANDI_ADR];
+		//int16_t isiticiUstHis		= registerTable[DW_ISITICI_UST_HIS_ADR];
+		int16_t isiticiAltHis		= registerTable[DW_ISITICI_ALT_HIS_ADR];
+
+		uint16_t data;
+
+		if(((altIsiticiBand + altSicaklik) < altSicaklikSet) && (altTurbo != 1))
+		{
+			altTurbo = 1;
+			turboCloseFlag = 0;
+
+			data = 1;
+
+			DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
+			DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
+
+			registerTable[DW_ALT_SICAKLIK_ANIM] = data;
+			registerTable[DW_ALT_ANIM] = data;
+
+			setOut(K6|K5, data);
+
+			SEGGER_RTT_printf(0,"Alt Turbo Aktif \r\n");
+
+			if(((ustArkaIsiticiBand + ustSicaklik) < ustSicaklikSet) && (ustArkaTurbo != 1))
+			{
+				ustArkaTurbo = 1;
+				turboCloseFlag = 0;
+
+				data = 1;
+
+				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+				DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
+
+				registerTable[DW_UST_SICAKLIK_ANIM] = data;
+				registerTable[DW_UST_ARKA_ANIM] = data;
+
+				setOut(K3, data);
+
+				SEGGER_RTT_printf(0,"Ust Arka Turbo Aktif \r\n");
+			}
+
+			if(((ustOnIsiticiBand + ustSicaklik) < ustSicaklikSet) && (ustOnTurbo != 1))
+			{
+				ustOnTurbo = 1;
+				turboCloseFlag = 0;
+
+				data = 1;
+
+				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+				DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
+
+				registerTable[DW_UST_SICAKLIK_ANIM] = data;
+				registerTable[DW_UST_ON_ANIM] = data;
+
+				setOut(K1, data);
+
+				SEGGER_RTT_printf(0,"Ust On Turbo Aktif \r\n");
+			}
+		}
+
+		if(altTurbo == 1)
+		{
+			if(((ustOnIsiticiBand + ustSicaklik) < ustSicaklikSet) && (ustOnTurbo != 1))
+			{
+				ustOnTurbo = 1;
+				turboCloseFlag = 0;
+
+				data = 1;
+
+				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+				DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
+
+				registerTable[DW_UST_SICAKLIK_ANIM] = data;
+				registerTable[DW_UST_ON_ANIM] = data;
+
+				setOut(K1, data);
+
+				SEGGER_RTT_printf(0,"Ust On Turbo Aktif \r\n");
+			}
+
+			if(((ustArkaIsiticiBand + ustSicaklik) < ustSicaklikSet) && (ustArkaTurbo != 1))
+			{
+				ustArkaTurbo = 1;
+				turboCloseFlag = 0;
+
+				data = 1;
+
+				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+				DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
+
+				registerTable[DW_UST_SICAKLIK_ANIM] = data;
+				registerTable[DW_UST_ARKA_ANIM] = data;
+
+				setOut(K3, data);
+
+				SEGGER_RTT_printf(0,"Ust Arka Turbo Aktif \r\n");
+			}
+
+			if((altIsiticiBand + altSicaklik) >= altSicaklikSet)
+			{
+				altTurbo = 0;
+				ustOnTurbo = 0;
+				ustArkaTurbo = 0;
+
+				data = 0;
+
+				DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
+				DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
+
+				registerTable[DW_ALT_SICAKLIK_ANIM] = data;
+				registerTable[DW_ALT_ANIM] = data;
+
+				setOut(K6|K5, data);
+
+				SEGGER_RTT_printf(0,"Alt Turbo Kapali \r\n");
+
+				counterTick.altPeriod 	= HAL_GetTick();
+			}
+
+		}
+
+		if((ustOnTurbo == 1)&&((ustOnIsiticiBand + ustSicaklik) >= ustSicaklikSet))
+		{
+			ustOnTurbo = 0;
+			data = 0;
+
+			DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
+
+			registerTable[DW_UST_ON_ANIM] = data;
+
+			setOut(K1, data);
+
+			SEGGER_RTT_printf(0,"Ust On Turbo Kapali \r\n");
+		}
+
+		if((ustArkaTurbo == 1)&&((ustArkaIsiticiBand + ustSicaklik) >= ustSicaklikSet))
+		{
+			ustArkaTurbo = 0;
+			data = 0;
+
+			DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
+
+			registerTable[DW_UST_ARKA_ANIM] = data;
+
+			setOut(K3, data);
+
+			SEGGER_RTT_printf(0,"Ust Arka Turbo Kapali \r\n");
+		}
+
+		if(altSicaklikSet <= (altSicaklik + isiticiAltHis))
+		{
+			if(((ustOnIsiticiBand + ustSicaklik) < ustSicaklikSet) && (ustOnTurbo != 1))
+			{
+				ustOnTurbo = 1;
+				turboCloseFlag = 0;
+
+				data = 1;
+
+				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+				DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
+
+				registerTable[DW_UST_SICAKLIK_ANIM] = data;
+				registerTable[DW_UST_ON_ANIM] = data;
+
+				setOut(K1, data);
+
+				SEGGER_RTT_printf(0,"Ust On Turbo Aktif \r\n");
+			}
+
+			if(((ustArkaIsiticiBand + ustSicaklik) < ustSicaklikSet) && (ustArkaTurbo != 1))
+			{
+				ustArkaTurbo = 1;
+				turboCloseFlag = 0;
+
+				data = 1;
+
+				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+				DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
+
+				registerTable[DW_UST_SICAKLIK_ANIM] = data;
+				registerTable[DW_UST_ARKA_ANIM] = data;
+
+				setOut(K3, data);
+
+				SEGGER_RTT_printf(0,"Ust Arka Turbo Aktif \r\n");
+			}
+		}
+		else if(((ustArkaTurbo == 1)||(ustOnTurbo == 1))&&(altTurbo == 0))
+		{
+			ustOnTurbo = 0;
+			ustArkaTurbo = 0;
+		}
+
+		if((registerTable[DW_UST_ARKA_ANIM] == 0)&&(registerTable[DW_UST_ON_ANIM] == 0)&&(registerTable[DW_UST_SICAKLIK_ANIM] == 1))
+		{
+			data = 0;
+			DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+			registerTable[DW_UST_SICAKLIK_ANIM] = data;
+		}
+
+		if((altTurbo == 0)&&(ustArkaTurbo == 0)&&(ustOnTurbo == 0)&&(turboCloseFlag == 0))
+		{
+			counterTick.turboCloseWait = HAL_GetTick();
+			turboCloseFlag = 1;
+		}
+
+		if((turboCloseFlag == 1)&&((HAL_GetTick() - counterTick.turboCloseWait) >= 10000))
+		{
+			data = 0;
+
+			turboCloseFlag = 0;
+
+			registerTable[DW_TURBO_ADR] = data;
+			DWIN_writeRegiser(&data, DW_TURBO_ADR, sizeof(data));
+		}
+	}
+}
+void DWIN_manuelProcess(void)
+{
+	uint16_t ustSicaklikSet 	= registerTable[DW_UST_SICAKLIK_SET_ADR];
+	uint16_t altSicaklikSet 	= registerTable[DW_ALT_SICAKLIK_SET_ADR];
+	uint16_t ustSicaklik 		= registerTable[DW_UST_SICAKLIK_ADR];
+	uint16_t altSicaklik 		= registerTable[DW_ALT_SICAKLIK_ADR];
+	//uint16_t ustOnIsiticiBand 	= registerTable[DW_UST_ON_ISITICI_BANDI_ADR];
+	//uint16_t ustArkaIsiticiBand = registerTable[DW_UST_ARKA_ISITICI_BANDI_ADR];
+	//uint16_t altIsiticiBand		= registerTable[DW_ALT_ISITICI_BANDI_ADR];
+	int16_t isiticiUstHis		= registerTable[DW_ISITICI_UST_HIS_ADR];
+	int16_t isiticiAltHis		= registerTable[DW_ISITICI_ALT_HIS_ADR];
+
+	uint16_t data;
+
+	if(ustSicaklikSet > (ustSicaklik + isiticiUstHis))
+	{
+		if(ustSicaklikProcess != 1)
+		{
+			data = 1;
+
+			DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+			DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
+			DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
+
+			registerTable[DW_UST_SICAKLIK_ANIM] = data;
+			registerTable[DW_UST_ON_ANIM] 		= data;
+			registerTable[DW_UST_ARKA_ANIM] 	= data;
+
+
+			setOut(K3|K1, data);
+
+			counterTick.ustOnPeriod 	= HAL_GetTick();
+			counterTick.ustArkaPeriod 	= HAL_GetTick();
+
+			ustSicaklikProcess = 1;
+
+			#if DEBUG_DWIN == 1
+			SEGGER_RTT_printf(0," ustSicaklikProcess = 1 \r\n");
+			#endif
+		}
+	}
+	else
+	{
+		if(ustSicaklikProcess != 99)
+		{
+			data = 0;
+
+			DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+			DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
+			DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
+
+			registerTable[DW_UST_SICAKLIK_ANIM] = data;
+			registerTable[DW_UST_ON_ANIM] = data;
+			registerTable[DW_UST_ARKA_ANIM] = data;
+
+			setOut(K3|K1, data);
+
+			ustSicaklikProcess = 99;
+
+			#if DEBUG_DWIN == 1
+			SEGGER_RTT_printf(0," ustSicaklikProcess = 99 \r\n");
+			#endif
+		}
+	}
+
+	if(altSicaklikSet > (altSicaklik + isiticiAltHis))
+	{
+		if(altSicaklikProcess != 1)
+		{
+			data = 1;
+
+			DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
+			DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
+
+			registerTable[DW_ALT_SICAKLIK_ANIM] = data;
+			registerTable[DW_ALT_ANIM] = data;
+
+			setOut(K6|K5, 1);
+
+			altSicaklikProcess = 1;
+
+			counterTick.altPeriod 	= HAL_GetTick();
+
+			#if DEBUG_DWIN == 1
+			SEGGER_RTT_printf(0," altSicaklikProcess = 1 \r\n");
+			#endif
+		}
+	}
+	else
+	{
+		if(altSicaklikProcess != 99)
+		{
+			data = 0;
+
+			DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
+			DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
+
+			registerTable[DW_ALT_SICAKLIK_ANIM] = data;
+			registerTable[DW_ALT_ANIM] = data;
+
+			setOut(K6|K5, data);
+
+			altSicaklikProcess = 99;
+
+			#if DEBUG_DWIN == 1
+			SEGGER_RTT_printf(0," altSicaklikProcess = 99 \r\n");
+			#endif
+		}
+	}
+
+}
+void DWIN_enterManuelProcess(void)
+{
+	uint16_t ustSicaklikSet 	= registerTable[DW_UST_SICAKLIK_SET_ADR];
+	uint16_t altSicaklikSet 	= registerTable[DW_ALT_SICAKLIK_SET_ADR];
+	uint16_t ustSicaklik 		= registerTable[DW_UST_SICAKLIK_ADR];
+	uint16_t altSicaklik 		= registerTable[DW_ALT_SICAKLIK_ADR];
+	//uint16_t ustOnIsiticiBand 	= registerTable[DW_UST_ON_ISITICI_BANDI_ADR];
+	//uint16_t ustArkaIsiticiBand = registerTable[DW_UST_ARKA_ISITICI_BANDI_ADR];
+	uint16_t altIsiticiBand		= registerTable[DW_ALT_ISITICI_BANDI_ADR];
+	int8_t isiticiUstHis		= registerTable[DW_ISITICI_UST_HIS_ADR];
+	int8_t isiticiAltHis		= registerTable[DW_ISITICI_ALT_HIS_ADR];
+
+	uint16_t data = 1;
+
+	if(ustSicaklikSet > (ustSicaklik + isiticiUstHis))
+	{
+		if(altSicaklikSet <= (altSicaklik + isiticiAltHis))
+		{
+			registerTable[DW_TURBO_ADR] = 1;
+
+			DWIN_writeRegiser(&data, DW_TURBO_ADR, sizeof(data));
+
+			#if DEBUG_DWIN == 1
+			SEGGER_RTT_printf(0,"Turbo Aktif \r\n");
+			#endif
+		}
+	}
+	if(altSicaklikSet > (altSicaklik + isiticiAltHis))
+	{
+
+		if(altSicaklikSet > (altSicaklik + altIsiticiBand))
+		{
+
+			registerTable[DW_TURBO_ADR] = 1;
+
+			DWIN_writeRegiser(&data, DW_TURBO_ADR, sizeof(data));
+
+			#if DEBUG_DWIN == 1
+			SEGGER_RTT_printf(0,"Turbo Aktif \r\n");
+			#endif
+		}
+	}
+}
+
+void DWIN_check(void)
+{
+	if((HAL_GetTick() - counterTick.dwinCheck) >= 500)
+	{
+		if(DWIN.Init != 1)
+		{
+			uint8_t version[2];
+
+			if(DWIN_readRegister(version, VERSION_ADDR, sizeof(version)) == READ_OK)
+			{
+				SEGGER_RTT_printf(0,"DWIN OK ! Version : %x%x\r\n",version[0],version[1]);
+
+				DWIN_changePage(0);
+
+				for(int i=0;i<sizeof(eepromAddrTable)/2;i++)
+				{
+					uint16_t writeDwin = registerTable[eepromAddrTable[i]];
+					DWIN_writeRegiser(&writeDwin, eepromAddrTable[i], sizeof(writeDwin));
+				}
+
+				changeMaxSetValue(registerTable[DW_ISITICI_PERIOD_ADR]);
+
+				DWIN_resetManuelPisirme();
+
+				uint16_t defaultReceteBuffer_u16[DW_RECETE_SIZE/2];
+
+				for(int i=0;i<DW_RECETE_AMOUNT;i++)
+				{
+					for(int j=0;j<(DW_RECETE_SIZE/2);j++)
+					{
+						defaultReceteBuffer_u16[j] = registerTable[DW_RECETE_ISIM_ILK_ADR + j + (i*(DW_RECETE_SIZE/2))];
+					}
+
+					DWIN_writeRegiser(defaultReceteBuffer_u16, DW_RECETE_ISIM_ILK_ADR + (i*(DW_RECETE_SIZE/2)), sizeof(defaultReceteBuffer_u16));
+
+					uint16_t writeDwin = registerTable[i+DW_RECETE_RESIM_ILK_ADR];
+					DWIN_writeRegiser(&writeDwin, DW_RECETE_RESIM_ILK_ADR + i, sizeof(writeDwin));
+				}
+
+
+				DWIN.Init = 1;
+			}
+
+			else
+			{
+
+		    	HAL_UART_DMAStop(DWIN_huart_channel);
+
+				if (HAL_UART_DeInit(&huart3) != HAL_OK)
+				{
+					SEGGER_RTT_printf(0,"DeInit ERROR !!! \r\n");
+					Error_Handler();
+				}
+
+				HAL_Delay(0);
+
+				if (HAL_UART_Init(&huart3) != HAL_OK)
+				{
+					SEGGER_RTT_printf(0,"Init ERROR !!! \r\n");
+					Error_Handler();
+				}
+
+				if(DWIN_SetUsartChannel(&huart3, USART3, &hdma_usart3_rx) != HAL_OK)
+				{
+				  SEGGER_RTT_printf(0,"DWIN Set Usart Channel Error ! \r\n");
+				  Error_Handler();
+				}
+			}
+		}
+
+		counterTick.dwinCheck = HAL_GetTick();
+	}
+}
+
+
+void DWIN_manuelPisirmeSuresi(void)
+{
+	if((registerTable[DW_PISIRME_BASLATMA_ADR] == 1)&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
+	{
+		if((HAL_GetTick() - counterTick.pisirmeSuresi) >= 300)
+		{
+			counterTick.pisirmeSuresi = HAL_GetTick();
+
+		    RTC_TimeTypeDef sTime = {0};
+		    RTC_DateTypeDef sDate = {0};
+
+		    //Saat bilgisi oku
+		    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+
+		    // Tarih bilgisi oku
+		    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+
+		    if(rtcSecondPisirme != sTime.Seconds)
+		    {
+		    	rtcSecondPisirme = sTime.Seconds;
+
+				pisirmeManuelDownCounter--;
+
+				uint16_t saniye = pisirmeManuelDownCounter % 60;
+				uint16_t dakika = pisirmeManuelDownCounter / 60;
+
+				registerTable[DW_PISIRME_SURESI_SN_ADR] = saniye;
+				registerTable[DW_PISIRME_SURESI_ADR] 	= dakika;
+
+				DWIN_writeRegiser(&saniye, DW_PISIRME_SURESI_SN_ADR, sizeof(saniye));
+				DWIN_writeRegiser(&dakika, DW_PISIRME_SURESI_ADR, sizeof(saniye));
+
+
+				counterTick.pisirmeSuresi = HAL_GetTick();
+
+				if(pisirmeManuelDownCounter <= 0)
+				{
+					pisirmeSonuAlarmFlag = 1;
+					pisirmeSonuAlarmBuzzer = 0;
+					registerTable[DW_PISIRME_BASLATMA_ADR] = 0;
+					registerTable[SURE_SONU_ADR] = 1;
+					DWIN_changePage(SURE_SONU_ADR);
+				}
+			}
+
+		}
+	}
+
+}
+
+void DWIN_manuelBuharSuresi(void)
+{
+	if((registerTable[DW_BUHAR_PUSKURTME_ADR] == 1)&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
+	{
+		if((HAL_GetTick() - counterTick.buharSuresi) >= 300)
+		{
+			counterTick.buharSuresi = HAL_GetTick();
+
+		    RTC_TimeTypeDef sTime = {0};
+		    RTC_DateTypeDef sDate = {0};
+
+		    //Saat bilgisi oku
+		    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+
+		    // Tarih bilgisi oku
+		    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+
+		    if(rtcSecondBuhar != sTime.Seconds)
+		    {
+		    	rtcSecondBuhar = sTime.Seconds;
+
+				buharManuelDownCounter--;
+
+				uint16_t saniye = buharManuelDownCounter;
+
+				registerTable[DW_BUHAR_SURESI_ADR] = saniye;
+
+				DWIN_writeRegiser(&saniye, DW_BUHAR_SURESI_ADR, sizeof(saniye));
+
+				counterTick.buharSuresi = HAL_GetTick();
+
+				if(buharManuelDownCounter <= 0)
+				{
+					registerTable[DW_BUHAR_SURESI_ADR] 	= registerTable[DW_BUHAR_SURESI_ORT_ADR];
+					registerTable[DW_BUHAR_PUSKURTME_ADR] = 0;
+					uint16_t data = registerTable[DW_BUHAR_SURESI_ORT_ADR];
+					DWIN_writeRegiser(&data, DW_BUHAR_SURESI_ADR, sizeof(data));
+
+					data = 0;
+					DWIN_writeRegiser(&data, DW_BUHAR_PUSKURTME_ADR, sizeof(data));
+
+					setOut(K9, 0);
+				}
+
+			}
+
+		}
+	}
+
+}
+
+void DWIN_lambaSuresi(void)
+{
+	if(registerTable[DW_LAMBA_ADR] == 1)
+	{
+		if((HAL_GetTick() - counterTick.lambaSuresi) >= (registerTable[DW_LAMBA_SURESI_ADR] * 1000))
+		{
+			setOut(K12, 0);
+			setOut(K13, 0);
+
+			registerTable[DW_LAMBA_ADR] = 0;
+
+			uint16_t data = 0;
+
+			DWIN_writeRegiser(&data, DW_LAMBA_ADR, sizeof(data));
+		}
+	}
+}
+
+void DWIN_pisirmeSonuAlarm(void)
+{
+	if(pisirmeSonuAlarmFlag)
+	{
+		if((HAL_GetTick() - counterTick.pisirmeSonuAlarm) >= alarmBuzzerPeriod)
+		{
+			counterTick.pisirmeSonuAlarm = HAL_GetTick();
+
+			pisirmeSonuAlarmBuzzer = !pisirmeSonuAlarmBuzzer;
+			setOut(BUZZER, pisirmeSonuAlarmBuzzer);
+
+		}
+	}
+}
+
+
+void DWIN_answerProcess(void)
+{
+	if((DWIN.Init) && (DWIN.rxDoneFlag == 1))
+	{
+		DWIN.rxDoneFlag = 0;
+
+		if(DWIN_receiveDataProcess() == READ_OK)
+		{
+			if(registerTable[DW_MANUEL_MOD_GIRIS_ADR] == 1)
+				DWIN_manuelSayfa();
+
+			DWIN_anaSayfa();
+			DWIN_receteSayfa();
+		}
+
+	}
+}
+
+void DWIN_anaSayfa(void)
+{
+	uint16_t addr = combineBytes(DWIN_rxBuffer[4], DWIN_rxBuffer[5]);
+	uint16_t data;
+	uint8_t data2[2];
+
+	switch(addr)
+	{
+		case DW_LAMBA_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+			registerTable[DW_LAMBA_ADR] = data;
+
+			if(data == 0)
+			{
+				setOut(K12, 0);
+				setOut(K13, 0);
+			}
+			else if(data == 1)
+			{
+				setOut(K12, 1);
+				setOut(K13, 1);
+
+				counterTick.lambaSuresi = HAL_GetTick();
+			}
+
+
+		break;
+
+		case DW_MANUEL_MOD_GIRIS_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == 0)
+			{
+				DWIN_resetManuelPisirme();
+//				TIM15->CCR2 = 0;
+//				TIM15->CCR1 = 0;
+//				TIM3->CCR1 = 0;
+			}
+
+
+			else if(data == 1)
+			{
+				setOut(K14, data);
+				DWIN_enterManuelProcess();
+				PID_Setup();
+
+			}
+
+			registerTable[DW_MANUEL_MOD_GIRIS_ADR] = data;
+
+		break;
+
+		case DW_PARAMETRE_PAGE_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == DW_PARAMETRE_PSW)
+			{
+				data = registerTable[DW_LAMBA_SURESI_ADR];
+				DWIN_writeRegiser(&data, DW_LAMBA_SURESI_ADR, sizeof(data));
+
+				data = registerTable[DW_UST_ON_ISITICI_BANDI_ADR];
+				DWIN_writeRegiser(&data, DW_UST_ON_ISITICI_BANDI_ADR, sizeof(data));
+
+				data = registerTable[DW_UST_ARKA_ISITICI_BANDI_ADR];
+				DWIN_writeRegiser(&data, DW_UST_ARKA_ISITICI_BANDI_ADR, sizeof(data));
+
+				data = registerTable[DW_ALT_ISITICI_BANDI_ADR];
+				DWIN_writeRegiser(&data, DW_ALT_ISITICI_BANDI_ADR, sizeof(data));
+
+				data = registerTable[DW_ISITICI_UST_HIS_ADR];
+				DWIN_writeRegiser(&data, DW_ISITICI_UST_HIS_ADR, sizeof(data));
+
+				data = registerTable[DW_ISITICI_ALT_HIS_ADR];
+				DWIN_writeRegiser(&data, DW_ISITICI_ALT_HIS_ADR, sizeof(data));
+
+				data = registerTable[DW_ISITICI_PERIOD_ADR];
+				DWIN_writeRegiser(&data, DW_ISITICI_PERIOD_ADR, sizeof(data));
+
+				DWIN_changePage(86);
+			}
+
+			else
+				DWIN_changePage(10);
+
+
+		break;
+
+		case DW_LAMBA_SURESI_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			registerTable[DW_LAMBA_SURESI_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_LAMBA_SURESI_ADR, data2, sizeof(data2));
+
+		break;
+
+		case DW_UST_ON_ISITICI_BANDI_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			registerTable[DW_UST_ON_ISITICI_BANDI_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_UST_ON_ISITICI_BANDI_ADR, data2, sizeof(data2));
+
+		break;
+
+		case DW_UST_ARKA_ISITICI_BANDI_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			registerTable[DW_UST_ARKA_ISITICI_BANDI_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_UST_ARKA_ISITICI_BANDI_ADR, data2, sizeof(data2));
+
+		break;
+
+		case DW_ALT_ISITICI_BANDI_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			registerTable[DW_ALT_ISITICI_BANDI_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_ALT_ISITICI_BANDI_ADR, data2, sizeof(data2));
+
+		break;
+
+		case DW_ISITICI_UST_HIS_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			registerTable[DW_ISITICI_UST_HIS_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_ISITICI_UST_HIS_ADR, data2, sizeof(data2));
+
+		break;
+
+		case DW_ISITICI_ALT_HIS_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			registerTable[DW_ISITICI_ALT_HIS_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_ISITICI_ALT_HIS_ADR, data2, sizeof(data2));
+
+		break;
+
+		case DW_ISITICI_PERIOD_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			registerTable[DW_ISITICI_PERIOD_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_ISITICI_PERIOD_ADR, data2, sizeof(data2));
+
+			changeMaxSetValue(data);
+
+		break;
+
+		case DW_ARIZA_ALARM_SUSTURMA_ADR:
+
+			data = 1;
+
+			registerTable[DW_ARIZA_ALARM_SUSTURMA_ADR] = 1;
+
+			pisirmeSonuAlarmFlag = 0;
+			pisirmeSonuAlarmBuzzer = 0;
+			setOut(BUZZER, 0);
+
+		break;
+
+
+	}
+}
+void DWIN_manuelSayfa(void)
+{
+
+	uint16_t addr = combineBytes(DWIN_rxBuffer[4], DWIN_rxBuffer[5]);
+
+	switch(addr)
+	{
+
+		case DW_BUHAR_HAZIRLAMA_ADR:
+
+			uint16_t data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+			registerTable[DW_BUHAR_HAZIRLAMA_ADR] = data;
+
+			if(data == 0)
+			{
+				setOut(K8, 0);
+				registerTable[DW_BUHAR_HAZIR_ANIM] = data;
+				DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
+			}
+
+			else if(data == 1)
+			{
+				setOut(K8, 1);
+				registerTable[DW_BUHAR_HAZIR_ANIM] = data;
+				DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
+			}
+
+		break;
+
+		case DW_BUHAR_PUSKURTME_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+			registerTable[DW_BUHAR_PUSKURTME_ADR] = data;
+
+			if(data == 0)
+			{
+				setOut(K9, 0);
+
+				registerTable[DW_BUHAR_PUSKURTME_ADR] = 0;
+
+				data = registerTable[DW_BUHAR_SURESI_ORT_ADR];
+				registerTable[DW_BUHAR_SURESI_ADR] 	= registerTable[DW_BUHAR_SURESI_ORT_ADR];
+
+				DWIN_writeRegiser(&data, DW_BUHAR_SURESI_ADR, sizeof(data));
+
+			}
+
+			else if((data == 1)&&(registerTable[DW_BUHAR_HAZIRLAMA_ADR] == 1))
+			{
+				setOut(K9, 1);
+
+				registerTable[DW_BUHAR_PUSKURTME_ADR] = data;
+				buharManuelDownCounter = registerTable[DW_BUHAR_SURESI_ADR] + 1;
+				registerTable[DW_BUHAR_SURESI_ORT_ADR] = registerTable[DW_BUHAR_SURESI_ADR];
+			}
+
+			else if((data == 1)&&(registerTable[DW_BUHAR_HAZIRLAMA_ADR] == 0))
+			{
+				data = 0;
+				registerTable[DW_BUHAR_PUSKURTME_ADR] = data;
+				DWIN_writeRegiser(&data, DW_BUHAR_PUSKURTME_ADR, sizeof(data));
+			}
+
+		break;
+
+		case DW_TURBO_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+			registerTable[DW_TURBO_ADR] = data;
+
+			if(data == 0)
+			{
+				altTurbo = 0;
+				ustOnTurbo = 0;
+				ustArkaTurbo = 0;
+			}
+			//setOut(K1|K3|K5|K6, data);
+
+//			DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+//			DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
+//			DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
+//			DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
+//			DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
+
+		break;
+
+		case DW_UST_SICAKLIK_SET_ONAY_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == 1)
+			{
+				uint8_t data2[2];
+				DWIN_readRegister(data2, DW_UST_SICAKLIK_SET_ORT_ADR, sizeof(data2));
+
+				data = combineBytes(data2[0], data2[1]);
+				registerTable[DW_UST_SICAKLIK_SET_ADR] = data;
+
+				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_SET_ADR, sizeof(data));
+
+				EEPROM_Write(&hi2c1, DW_UST_SICAKLIK_SET_ADR, data2, sizeof(data2));
+
+				PID_Setup();
+			}
+
+		break;
+
+		case DW_ALT_SICAKLIK_SET_ONAY_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == 1)
+			{
+				uint8_t data2[2];
+				DWIN_readRegister(data2, DW_ALT_SICAKLIK_SET_ORT_ADR, sizeof(data2));
+
+				data = combineBytes(data2[0], data2[1]);
+				registerTable[DW_ALT_SICAKLIK_SET_ADR] = data;
+
+				DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_SET_ADR, sizeof(data));
+
+				EEPROM_Write(&hi2c1, DW_ALT_SICAKLIK_SET_ADR, data2, sizeof(data2));
+
+				PID_Setup();
+
+			}
+
+		break;
+
+		case DW_UST_ON_SET_ONAY_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == 1)
+			{
+				uint8_t data2[2];
+				DWIN_readRegister(data2, DW_UST_ON_SET_ORT_ADR, sizeof(data2));
+
+				data = combineBytes(data2[0], data2[1]);
+				registerTable[DW_UST_ON_SET_ADR] = data;
+
+				DWIN_writeRegiser(&data, DW_UST_ON_SET_ADR, sizeof(data));
+
+				EEPROM_Write(&hi2c1, DW_UST_ON_SET_ADR, data2, sizeof(data2));
+			}
+
+		break;
+
+		case DW_UST_ARKA_SET_ONAY_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == 1)
+			{
+				uint8_t data2[2];
+				DWIN_readRegister(data2, DW_UST_ARKA_SET_ORT_ADR, sizeof(data2));
+
+				data = combineBytes(data2[0], data2[1]);
+				registerTable[DW_UST_ARKA_SET_ADR] = data;
+
+				DWIN_writeRegiser(&data, DW_UST_ARKA_SET_ADR, sizeof(data));
+
+				EEPROM_Write(&hi2c1, DW_UST_ARKA_SET_ADR, data2, sizeof(data2));
+			}
+
+		break;
+
+		case DW_ALT_SET_ONAY_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == 1)
+			{
+				uint8_t data2[2];
+				DWIN_readRegister(data2, DW_ALT_SET_ORT_ADR, sizeof(data2));
+
+				data = combineBytes(data2[0], data2[1]);
+				registerTable[DW_ALT_SET_ADR] = data;
+
+				DWIN_writeRegiser(&data, DW_ALT_SET_ADR, sizeof(data));
+
+				EEPROM_Write(&hi2c1, DW_ALT_SET_ADR, data2, sizeof(data2));
+			}
+
+		break;
+
+		case DW_PISIRME_SURESI_SET_ONAY_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == 1)
+			{
+
+				uint8_t data2[2];
+				DWIN_readRegister(data2, DW_PISIRME_SURESI_ORT_ADR, sizeof(data2));
+
+				data = combineBytes(data2[0], data2[1]);
+
+				registerTable[DW_PISIRME_SURESI_ADR] 		= data;
+				registerTable[DW_PISIRME_SURESI_ORT_ADR] 	= data;
+
+				DWIN_writeRegiser(&data, DW_PISIRME_SURESI_ADR, sizeof(data));
+
+				data = 0;
+
+				DWIN_writeRegiser(&data, DW_PISIRME_SURESI_SN_ADR, sizeof(data));
+
+				EEPROM_Write(&hi2c1, DW_PISIRME_SURESI_ADR, data2, sizeof(data2));
+
+			}
+
+		break;
+
+		case DW_BUHAR_SURESI_SET_ONAY_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == 1)
+			{
+
+				uint8_t data2[2];
+				DWIN_readRegister(data2, DW_BUHAR_SURESI_ORT_ADR, sizeof(data2));
+
+				data = combineBytes(data2[0], data2[1]);
+
+				registerTable[DW_BUHAR_SURESI_ADR] 		= data;
+				registerTable[DW_BUHAR_SURESI_ORT_ADR] 	= data;
+
+				DWIN_writeRegiser(&data, DW_BUHAR_SURESI_ADR, sizeof(data));
+
+				EEPROM_Write(&hi2c1, DW_BUHAR_SURESI_ADR, data2, sizeof(data2));
+			}
+
+		break;
+
+		case DW_PISIRME_BASLATMA_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == 1)
+			{
+				if(registerTable[DW_PISIRME_BASLATMA_ADR] != 1)
+				{
+					registerTable[DW_PISIRME_BASLATMA_ADR] = data;
+					pisirmeManuelDownCounter = (registerTable[DW_PISIRME_SURESI_ADR] * 60) + 1;
+					registerTable[DW_PISIRME_SURESI_ORT_ADR] = registerTable[DW_PISIRME_SURESI_ADR];
+				}
+			}
+
+		break;
+
+		case DW_PISIRME_SONLANDIRMA_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == 1)
+			{
+				registerTable[DW_PISIRME_BASLATMA_ADR] = 0;
+
+				data = registerTable[DW_PISIRME_SURESI_ORT_ADR];
+				registerTable[DW_PISIRME_SURESI_ADR] 	= registerTable[DW_PISIRME_SURESI_ORT_ADR];
+				registerTable[DW_PISIRME_SURESI_SN_ADR] = 0;
+
+				DWIN_writeRegiser(&data, DW_PISIRME_SURESI_ADR, sizeof(data));
+
+				data = 0;
+
+				DWIN_writeRegiser(&data, DW_PISIRME_SURESI_SN_ADR, sizeof(data));
+				DWIN_writeRegiser(&data, DW_PISIRME_BASLATMA_ADR, sizeof(data));
+				DWIN_writeRegiser(&data, DW_PISIRME_SONLANDIRMA_ADR, sizeof(data));
+
+				//DWIN_resetManuelPisirme();
+			}
+
+		break;
+
+		case DW_PISIRME_ALARM_SUSTURMA_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == 1)
+			{
+				pisirmeSonuAlarmFlag = 0;
+				pisirmeSonuAlarmBuzzer = 0;
+				setOut(BUZZER, 0);
+
+				registerTable[DW_PISIRME_BASLATMA_ADR] = 0;
+
+				data = registerTable[DW_PISIRME_SURESI_ORT_ADR];
+				registerTable[DW_PISIRME_SURESI_ADR] 	= registerTable[DW_PISIRME_SURESI_ORT_ADR];
+				registerTable[DW_PISIRME_SURESI_SN_ADR] = 0;
+				registerTable[SURE_SONU_ADR] 			= 0;
+
+				DWIN_writeRegiser(&data, DW_PISIRME_SURESI_ADR, sizeof(data));
+
+				data = 0;
+
+				DWIN_writeRegiser(&data, DW_PISIRME_SURESI_SN_ADR, sizeof(data));
+				DWIN_writeRegiser(&data, DW_PISIRME_BASLATMA_ADR, sizeof(data));
+				DWIN_writeRegiser(&data, DW_PISIRME_SONLANDIRMA_ADR, sizeof(data));
+
+				//DWIN_resetManuelPisirme();
+			}
+
+		break;
+
+	}
+
+}
+
+void DWIN_receteSayfa(void)
+{
+	uint16_t addr = combineBytes(DWIN_rxBuffer[4], DWIN_rxBuffer[5]);
+
+	if((addr >= DW_RECETE_ILK_ADR)&&(addr <= DW_RECETE_SON_ADR))
+	{
+
+		uint16_t data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+		switch(data)
+		{
+			case 1:
+
+			break;
+
+			case 2:
+
+				DWIN_changePage(35);
+				uint16_t test = 65;
+				DWIN_writeRegiser(&test, 0x1039, sizeof(test));
+
+			break;
+
+		}
+	}
+}
+
+void DWIN_resetManuelPisirme(void)
+{
+	pisirmeSonuAlarmFlag = 0;
+	pisirmeSonuAlarmBuzzer = 0;
+
+	altSicaklikProcess = 99;
+	ustSicaklikProcess = 99;
+
+	altTurbo 		= 0;
+	ustArkaTurbo 	= 0;
+	ustOnTurbo 		= 0;
+	alarmBuzzerPeriod = 1000;
+
+	setOut(K8|K9|BUZZER|K1|K2|K3|K4|K5|K6|K14, 0);
+
+	uint16_t data;
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+	registerTable[DW_PISIRME_SURESI_ADR] 	= registerTable[DW_PISIRME_SURESI_ORT_ADR];
+	registerTable[DW_PISIRME_SURESI_SN_ADR] = 0;
+	data = registerTable[DW_PISIRME_SURESI_ORT_ADR];
+	DWIN_writeRegiser(&data, DW_PISIRME_SURESI_ADR, sizeof(data));
+////////////////////////////////////////////////////////////////////////////////////////////////////
+	registerTable[DW_BUHAR_SURESI_ADR] 	= registerTable[DW_BUHAR_SURESI_ORT_ADR];
+	registerTable[DW_BUHAR_PUSKURTME_ADR] = 0;
+	data = registerTable[DW_BUHAR_SURESI_ORT_ADR];
+	DWIN_writeRegiser(&data, DW_BUHAR_SURESI_ADR, sizeof(data));
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	registerTable[DW_PISIRME_BASLATMA_ADR] 		= 0;
+	registerTable[DW_BUHAR_HAZIRLAMA_ADR] 		= 0;
+	registerTable[DW_BUHAR_PUSKURTME_ADR] 		= 0;
+	registerTable[DW_TURBO_ADR] 				= 0;
+	registerTable[DW_UST_SICAKLIK_ANIM] 		= 0;
+	registerTable[DW_UST_ON_ANIM] 				= 0;
+	registerTable[DW_UST_ARKA_ANIM] 			= 0;
+	registerTable[DW_ALT_SICAKLIK_ANIM] 		= 0;
+	registerTable[DW_ALT_ANIM] 					= 0;
+	registerTable[DW_ARIZA_PAGE_ADR]			= 0;
+	registerTable[SURE_SONU_ADR] 				= 0;
+	registerTable[DW_BUHAR_HAZIR_ANIM]			= 0;
+	registerTable[DW_ARIZA_ALARM_SUSTURMA_ADR]	= 0;
+
+	data = 0;
+
+	DWIN_writeRegiser(&data, DW_PISIRME_SURESI_SN_ADR, sizeof(data));
+	DWIN_writeRegiser(&data, DW_PISIRME_BASLATMA_ADR, sizeof(data));
+	DWIN_writeRegiser(&data, DW_PISIRME_SONLANDIRMA_ADR, sizeof(data));
+	DWIN_writeRegiser(&data, DW_BUHAR_PUSKURTME_ADR, sizeof(data));
+	DWIN_writeRegiser(&data, DW_BUHAR_HAZIRLAMA_ADR, sizeof(data));
+	DWIN_writeRegiser(&data, DW_TURBO_ADR, sizeof(data));
+	DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
+	DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+	DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
+	DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
+	DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
+	DWIN_writeRegiser(&data, DW_ARIZA_ALARM_SUSTURMA_ADR, sizeof(data));
+	DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
+}
+
+void DWIN_arızaCheck(void)
+{
+	if((temp.TC2 >= 400) && (registerTable[DW_TC2_ARIZA_ADR] != 1))
+	{
+		registerTable[DW_TC2_ARIZA_ADR] = 1;
+		uint16_t data = 1;
+		DWIN_writeRegiser(&data, DW_TC2_ARIZA_ADR, sizeof(data));
+	}
+
+	if((temp.TC2 < 400) && (registerTable[DW_TC2_ARIZA_ADR] != 0))
+	{
+		registerTable[DW_TC2_ARIZA_ADR] = 0;
+		uint16_t data = 0;
+		DWIN_writeRegiser(&data, DW_TC2_ARIZA_ADR, sizeof(data));
+	}
+
+	if((temp.TC3 >= 400) && (registerTable[DW_TC3_ARIZA_ADR] != 1))
+	{
+		registerTable[DW_TC3_ARIZA_ADR] = 1;
+		uint16_t data = 1;
+		DWIN_writeRegiser(&data, DW_TC3_ARIZA_ADR, sizeof(data));
+	}
+
+	if((temp.TC3 < 400) && (registerTable[DW_TC3_ARIZA_ADR] != 0))
+	{
+		registerTable[DW_TC3_ARIZA_ADR] = 0;
+		uint16_t data = 0;
+		DWIN_writeRegiser(&data, DW_TC3_ARIZA_ADR, sizeof(data));
+	}
+
+	if((HAL_GPIO_ReadPin(I_KAPI_SWITCH) == 0)&&(registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] != 1))
+	{
+		registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] = 1;
+		uint16_t data = 1;
+		DWIN_writeRegiser(&data, DW_ASIRI_SICAKLIK_ARIZA_ADR, sizeof(data));
+	}
+
+	if((HAL_GPIO_ReadPin(I_KAPI_SWITCH) == 1)&&(registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] != 0))
+	{
+		registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] = 0;
+		uint16_t data = 0;
+		DWIN_writeRegiser(&data, DW_ASIRI_SICAKLIK_ARIZA_ADR, sizeof(data));
+	}
+
+	if(((registerTable[DW_TC2_ARIZA_ADR] == 1) || (registerTable[DW_TC3_ARIZA_ADR] == 1) || (registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] == 1))&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
+	{
+		registerTable[DW_ARIZA_PAGE_ADR] = 1;
+		DWIN_changePage(DW_ARIZA_PAGE_ADR);
+		setOut(K1|K2|K3|K4|K5|K6, 0);
+		pisirmeSonuAlarmFlag = 1;
+		alarmBuzzerPeriod = 200;
+	}
+
+	if((registerTable[DW_TC2_ARIZA_ADR] == 0) && (registerTable[DW_TC3_ARIZA_ADR] == 0) && (registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] == 0) && (registerTable[DW_ARIZA_PAGE_ADR] != 0))
+	{
+		registerTable[DW_ARIZA_PAGE_ADR] = 0;
+		registerTable[DW_ARIZA_ALARM_SUSTURMA_ADR] = 0;
+		uint16_t data = 0;
+		DWIN_writeRegiser(&data, DW_ARIZA_ALARM_SUSTURMA_ADR, sizeof(data));
+		DWIN_changePage(DW_PISIRME_PAGE_ADR);
+		if(registerTable[SURE_SONU_ADR] != 1)
+		{
+			pisirmeSonuAlarmFlag = 0;
+			pisirmeSonuAlarmBuzzer = 0;
+			setOut(BUZZER, 0);
+		}
+		alarmBuzzerPeriod = 1000;
+
+		if(registerTable[SURE_SONU_ADR] == 1)
+			DWIN_changePage(SURE_SONU_ADR);
+
+		ustSicaklikProcess = 99;
+		altSicaklikProcess = 99;
+
+	}
+}
+
+void DWIN_buharHazirCheck(void)
+{
+	if(HAL_GPIO_ReadPin(I_BUHAR_HAZIR) == 1)
+		counterTick.buharHazir = 0;
+
+	if((counterTick.buharHazir >= 100) && (registerTable[DW_BUHAR_HAZIRLAMA_ADR] == 1) && (registerTable[DW_BUHAR_HAZIR_ANIM] != 2))
+	{
+		registerTable[DW_BUHAR_HAZIR_ANIM] = 2;
+		uint16_t data = 2;
+		DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
+	}
+
+	if((counterTick.buharHazir < 100) && (registerTable[DW_BUHAR_HAZIRLAMA_ADR] == 1) && (registerTable[DW_BUHAR_HAZIR_ANIM] == 2))
+	{
+		registerTable[DW_BUHAR_HAZIR_ANIM] = 1;
+		uint16_t data = 1;
+		DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
+	}
+
+}
+
+

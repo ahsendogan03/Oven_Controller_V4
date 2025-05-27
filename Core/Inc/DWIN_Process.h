@@ -1,0 +1,81 @@
+/*
+ * DWIN_Process.h
+ *
+ *  Created on: Jan 20, 2025
+ *      Author: Step
+ */
+
+#ifndef INC_DWIN_PROCESS_H_
+#define INC_DWIN_PROCESS_H_
+
+#include "main.h"
+#include "DWIN_Adress.h"
+
+
+#define DEBUG_DWIN 1
+#define TIMEOUT_MS 10
+#define MAX_ATTEMPT 3
+
+#define VERSION_ADDR 	0x000F
+#define READ_CMD 		0x83
+#define WRITE_CMD		0x82
+
+typedef enum
+{
+	NO_RESPONSE	= 	0,
+	CRC_ERROR	= 	1,
+	WRITE_OK	=	2,
+	READ_OK		=	3,
+
+} DWIN_Response;
+
+
+typedef struct{
+	uint32_t bluetoothCheck;
+	uint32_t dwinCheck;
+    uint32_t run;
+    uint32_t pisirmeSuresi;
+    uint32_t buharSuresi;
+    uint32_t lambaSuresi;
+    uint32_t pisirmeSonuAlarm;
+    uint32_t ustOnPeriod;
+    uint32_t ustArkaPeriod;
+    uint32_t altPeriod;
+    uint32_t turboCloseWait;
+    uint32_t buharHazir;
+    uint32_t PID_Run;
+    uint32_t shiftRefreshWait;
+}tickCounter;
+
+
+uint16_t calculateCRC16Modbus(uint8_t *data, uint16_t length);
+uint16_t combineBytes(uint8_t highByte, uint8_t lowByte);
+void parse16BitTo8Bit(uint16_t value, uint8_t *highByte, uint8_t *lowByte);
+HAL_StatusTypeDef DWIN_SetUsartChannel(UART_HandleTypeDef *huart, USART_TypeDef *Declaration, DMA_HandleTypeDef *hdma);
+void DWIN_check(void);
+DWIN_Response DWIN_readRegister(uint8_t* pBuffer, uint16_t addr, uint8_t len);
+DWIN_Response DWIN_writeRegiser(uint16_t* pBuffer, uint16_t addr, uint8_t len);
+DWIN_Response DWIN_changePage(uint8_t pageNumber);
+void convert_u8_to_u16(const uint8_t src[20], uint16_t dest[10]);
+void convert_u16_to_u8(const uint16_t src[10], uint8_t dest[20]);
+
+DWIN_Response DWIN_receiveDataProcess(void);
+void DWIN_answerProcess(void);
+void DWIN_run(void);
+void DWIN_manuelSayfa(void);
+void DWIN_anaSayfa(void);
+void DWIN_manuelPisirmeSuresi(void);
+void DWIN_manuelBuharSuresi(void);
+void DWIN_pisirmeSonuAlarm(void);
+void DWIN_resetManuelPisirme(void);
+void DWIN_enterManuelProcess(void);
+void DWIN_lambaSuresi(void);
+void DWIN_manuelProcess(void);
+void DWIN_manuelPeriodProcess(void);
+void changeMaxSetValue(uint16_t maxValue);
+void DWIN_manuelTurboProcess(void);
+void DWIN_arızaCheck(void);
+void DWIN_buharHazirCheck(void);
+void DWIN_receteSayfa(void);
+
+#endif /* INC_DWIN_PROCESS_H_ */
