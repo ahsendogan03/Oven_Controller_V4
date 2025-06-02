@@ -97,6 +97,11 @@ void PID_Setup(void)
 		else
 		{
 			ustArka_Turbo_Calc 	= (((TempSetpoint_UstArka - ustArkaSicaklik)/TEMP_APPROACH_VALUE) * TEMP_TURBO_LIMIT_DIFF_UST_ARKA)+((TempSetpoint_UstArka - ustArkaSicaklik)/10);
+
+			if((TempSetpoint_UstArka - ustArkaSicaklik) <= 40)
+			{
+				ustArka_Turbo_Calc = ustArka_Turbo_Calc + (ustArka_Turbo_Calc/2);
+			}
 		}
 	}
 	else
@@ -113,6 +118,11 @@ void PID_Setup(void)
 		else
 		{
 			alt_Turbo_Calc 	= (((TempSetpoint_Alt - altSicaklik)/TEMP_APPROACH_VALUE) * TEMP_TURBO_LIMIT_DIFF_ALT)+((TempSetpoint_Alt - altSicaklik)/10);
+
+			if((TempSetpoint_Alt - altSicaklik) <= 40)
+			{
+				alt_Turbo_Calc = alt_Turbo_Calc + (alt_Turbo_Calc/2);
+			}
 		}
 	}
 	else
@@ -155,10 +165,18 @@ void PID_Run()
 
 			dutyCycle_ustArka = 25;
 
+			if(TempSetpoint_UstArka > 250)
+				dutyCycle_ustArka = 50;
+			if(TempSetpoint_UstArka > 300)
+				dutyCycle_ustArka = 75;
+
 			SEGGER_RTT_printf(0,"Ust Arka B\r\n");
 		}
 		else if((TempSetpoint_UstArka - 1) > ustArkaSicaklik)
 		{
+			TPID_UstArka.Ki = 0.02;
+
+
 			PID_Compute(&TPID_UstArka,HAL_GetTick());
 			dutyCycle_ustArka = PIDOut_UstArka;
 
@@ -176,7 +194,7 @@ void PID_Run()
 
 	else
 	{
-		if((TempSetpoint_UstArka - 10) > ustArkaSicaklik)
+		if((TempSetpoint_UstArka - 7) > ustArkaSicaklik)
 		{
 			PIDOut_UstArka = 0;
 			TPID_UstArka.OutputSum = 0;
@@ -187,7 +205,7 @@ void PID_Run()
 		}
 		else if(ustArkaSicaklik < (TempSetpoint_UstArka ))
 		{
-			TPID_UstArka.Ki = 0.05;
+			TPID_UstArka.Ki = 0.02;
 
 			PID_Compute(&TPID_UstArka,HAL_GetTick());
 			dutyCycle_ustArka = PIDOut_UstArka;
@@ -220,6 +238,13 @@ void PID_Run()
 		if((TempSetpoint_Alt - (alt_Turbo_Calc/4)) >= altSicaklik)
 		{
 			dutyCycle_Alt = 30;
+
+			if(TempSetpoint_Alt > 250)
+				dutyCycle_Alt = 50;
+			if(TempSetpoint_Alt > 320)
+				dutyCycle_Alt = 75;
+
+
 			SEGGER_RTT_printf(0,"Alt B\r\n");
 		}
 		else
