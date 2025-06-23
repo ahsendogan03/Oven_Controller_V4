@@ -139,6 +139,7 @@ int main(void)
 		  HAL_GPIO_TogglePin(RUN_LED);
 	  }
 
+
 	  if(adc_Init() != HAL_OK)
 	  {
 		  SEGGER_RTT_printf(0,"ADC Error \r\n");

@@ -246,12 +246,16 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 
 			if(data == 0)
 			{
+				registerTable[REG_DW_MODE_INFO_ADR] = DW_ANA_SAYFA_ENTER;
+
 				DWIN_resetManuelPisirme();
 				DWIN_changePage(0);
 			}
 
 			else if(data == 1)
 			{
+				registerTable[REG_DW_MODE_INFO_ADR] = DW_MANUEL_MODE_ENTER;
+
 				DWIN_changePage(2);
 				setOut(K14, data);
 				DWIN_enterManuelProcess();
@@ -259,7 +263,7 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 
 			// sayfa degistirme komutu
 
-			registerTable[DW_MANUEL_MOD_GIRIS_ADR] = data;
+
 
 		break;
 

@@ -44,7 +44,9 @@ EEPROM_initResponse EEPROM_Recete_DefaultWrite(I2C_HandleTypeDef *hi2c);
 void EEPROM_Recete_Read(I2C_HandleTypeDef *hi2c);
 EEPROM_initResponse EEPROM_init(I2C_HandleTypeDef *hi2c);
 
-#define EE_RECETE_ISIM_ILK_ADR 0x830
-#define EE_RECETE_RESIM_ILK_ADR 0x768
+#define EE_RECETE_ILK_ADR 			0x2000
+#define EE_RECETE_DATA_SIZE			60
+//#define EE_RECETE_RESIM_ILK_ADR 	0x768
+//#define EE_RECEDE_ADIM_SAYISI_ADR	0x2000
 
 #endif /* INC_EEPROM_PROCESS_H_ */

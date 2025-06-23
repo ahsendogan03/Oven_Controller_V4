@@ -17,6 +17,18 @@
 #define DW_ARIZA_PAGE_ADR				85
 #define DW_PISIRME_PAGE_ADR				2
 
+#define DW_PISIRME_DUZEN_PAGE1_ADR		38
+#define DW_PISIRME_DUZEN_PAGE2_ADR		37
+#define DW_PISIRME_DUZEN_PAGE3_ADR		35
+#define DW_PISIRME_DUZEN_PAGE4_ADR		32
+
+/*--------------------------------- MODE INFO -------------------------------*/
+#define REG_DW_MODE_INFO_ADR			0x2000
+
+#define DW_ANA_SAYFA_ENTER				0
+#define DW_MANUEL_MODE_ENTER			1
+#define DW_RECETE_SAYFA_ENTER			2
+
 /*---------------------------- MANUEL SAYFASI ------------------------------*/
 
 #define DW_MANUEL_MOD_GIRIS_ADR			0x2000
@@ -91,15 +103,25 @@
 
 /*--------------------------------- RECETELER -----------------------------------*/
 
+#define DW_RECETE_SAYFA_ENTER_ADR		0x2800
+#define DW_RECETE_CIKIS_CMD				0x107F
 #define DW_RECETE_AMOUNT				100
-#define DW_RECETE_SIZE					20
+#define DW_RECETE_ISIM_SIZE				20
 #define DW_RECETE_RESIM_ILK_ADR			0x10FB
 #define DW_RECETE_ISIM_ILK_ADR			0x115F
 
 #define DW_RECETE_ILK_ADR				0x1097
 #define DW_RECETE_SON_ADR				0x10FA
 
+#define DW_RECETE_UST_SICAKLIK_SET_ADR	0x1039
+#define DW_RECETE_ALT_SICAKLIK_SET_ADR	0x103B
+#define DW_RECETE_UST_ON_SET_ADR		0x103D
 
+#define DW_RECETE_DUZ_RESIM_ADR			0x1071
+#define DW_RECETE_DUZ_NUM_ADR			0x1072
+#define DW_RECETE_DUZ_ISIM_ADR			0x1073
+#define DW_RECETE_DUZ_ADIM_SAY_ADR		0x107E
+#define DW_RECETE_DUZ_UST_SIC_SET_ADR	0x1039
 
 
 #endif /* INC_DWIN_ADRESS_H_ */

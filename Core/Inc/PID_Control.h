@@ -21,5 +21,6 @@ void PID_Turbo_Check(void);
 void TempSetPoint_Arrive_Check(void);
 void manual_pwm_update(void);
 void pwmOutProcess(void);
+void PID_animationProcess(void);
 
 #endif /* INC_PID_CONTROL_H_ */

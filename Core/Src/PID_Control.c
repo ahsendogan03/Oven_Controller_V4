@@ -8,6 +8,7 @@
 
 #include "PID_Control.h"
 #include "DWIN_Process.h"
+#include "DWIN_Adress.h"
 #include "Temperature_Process.h"
 #include "SEGGER_RTT.h"
 #include "EEPROM_Process.h"
@@ -296,13 +297,17 @@ void PID_Run()
 	SEGGER_RTT_printf(0,"Temp Ust Arka:  %d  Temp Alt:%d   -- UST SET : %d -- ALT SET : %d --  \r\n ",ustArkaSicaklik,altSicaklik,(int)TempSetpoint_UstOn,(int)TempSetpoint_Alt);
 	SEGGER_RTT_printf(0,"PID Ust Arka :  %d  PID Alt :%d \r\n",pwm2_duty,pwm1_duty);
 
+	PID_animationProcess();
+
 }
 
 void PID_Turbo_Check(void)
 {
 
 	if((PID_ustArkaTurboCheck != 1) && ((ustArkaSicaklik) < (TempSetpoint_UstArka - ustArka_Turbo_Calc)))
+	{
 		PID_ustArkaTurboCheck = 1;
+	}
 
 	if((PID_ustArkaTurboCheck != 0) && (ustArkaSicaklik >= (TempSetpoint_UstArka - ustArka_Turbo_Calc)))
 	{
@@ -311,7 +316,9 @@ void PID_Turbo_Check(void)
 	}
 
 	if((PID_AltTurboCheck != 1) && ((altSicaklik) < (TempSetpoint_Alt - alt_Turbo_Calc)))
+	{
 		PID_AltTurboCheck = 1;
+	}
 
 	if((PID_AltTurboCheck != 0) && ((altSicaklik) >= (TempSetpoint_Alt - alt_Turbo_Calc)))
 	{
@@ -335,7 +342,7 @@ void TempSetPoint_Arrive_Check(void)
 
 void manual_pwm_update(void)
 {
-	if((registerTable[DW_MANUEL_MOD_GIRIS_ADR] == 1)&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
+	if((registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
 	{
 		// PWM1
 		if (pwm_counter < (pwm1_duty * 10))
@@ -361,9 +368,67 @@ void manual_pwm_update(void)
 
 void pwmOutProcess(void)
 {
-	if((registerTable[DW_MANUEL_MOD_GIRIS_ADR] == 1)&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
+	if((registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
 	{
 		shiftRefresh();
+	}
+}
+
+void PID_animationProcess(void)
+{
+	if(registerTable[DW_TURBO_ADR] == 1)
+	{
+		if((pwm1_duty != 100)&&(pwm2_duty != 100))
+		{
+			uint16_t data = 0;
+
+			registerTable[DW_TURBO_ADR] = data;
+			DWIN_writeRegiser(&data, DW_TURBO_ADR, sizeof(data));
+		}
+	}
+	else
+	{
+		if((pwm1_duty == 100)||(pwm2_duty == 100))
+		{
+			uint16_t data = 1;
+
+			registerTable[DW_TURBO_ADR] = data;
+			DWIN_writeRegiser(&data, DW_TURBO_ADR, sizeof(data));
+		}
+	}
+
+	if((pwm1_duty > 0)&&(registerTable[DW_ALT_SICAKLIK_ANIM] != 1))
+	{
+		uint16_t data = 1;
+
+		registerTable[DW_ALT_SICAKLIK_ANIM] = data;
+		DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
+
+	}
+	if((pwm1_duty == 0)&&(registerTable[DW_ALT_SICAKLIK_ANIM] == 1))
+	{
+		uint16_t data = 0;
+
+		registerTable[DW_ALT_SICAKLIK_ANIM] = data;
+		DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
+
+	}
+
+	if((pwm2_duty > 0)&&(registerTable[DW_UST_SICAKLIK_ANIM] != 1))
+	{
+		uint16_t data = 1;
+
+		registerTable[DW_UST_SICAKLIK_ANIM] = data;
+		DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+
+	}
+	if((pwm2_duty == 0)&&(registerTable[DW_UST_SICAKLIK_ANIM] == 1))
+	{
+		uint16_t data = 0;
+
+		registerTable[DW_UST_SICAKLIK_ANIM] = data;
+		DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
+
 	}
 }
 

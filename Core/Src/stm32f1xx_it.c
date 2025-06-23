@@ -280,6 +280,8 @@ void USART1_IRQHandler(void)
 
 		ESP32.rxDoneFlag = 1;
 
+		memset(main_ESP32_rxBuffer,0,sizeof(main_ESP32_rxBuffer));
+
 	}
   /* USER CODE END USART1_IRQn 1 */
 }
@@ -304,6 +306,8 @@ void USART3_IRQHandler(void)
 		HAL_UART_Receive_DMA(&huart3, main_DWIN_rxBuffer, DWIN_rxBufferSize);
 
 		DWIN.rxDoneFlag = 1;
+
+		memset(main_DWIN_rxBuffer,0,sizeof(main_DWIN_rxBuffer));
 
 	}
   /* USER CODE END USART3_IRQn 1 */

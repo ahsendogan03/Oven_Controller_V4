@@ -56,8 +56,8 @@ void DWIN_check(void);
 DWIN_Response DWIN_readRegister(uint8_t* pBuffer, uint16_t addr, uint8_t len);
 DWIN_Response DWIN_writeRegiser(uint16_t* pBuffer, uint16_t addr, uint8_t len);
 DWIN_Response DWIN_changePage(uint8_t pageNumber);
-void convert_u8_to_u16(const uint8_t src[20], uint16_t dest[10]);
-void convert_u16_to_u8(const uint16_t src[10], uint8_t dest[20]);
+void convert_u8_to_u16(const uint8_t src[], uint16_t dest[], uint16_t size);
+void convert_u16_to_u8(const uint16_t src[], uint8_t dest[], uint16_t size);
 
 DWIN_Response DWIN_receiveDataProcess(void);
 void DWIN_answerProcess(void);

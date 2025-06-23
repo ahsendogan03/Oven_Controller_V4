@@ -41,6 +41,8 @@ volatile uint16_t registerTable[9000];
 
 
 
+
+
 uint16_t pisirmeManuelDownCounter 	= 0;
 uint16_t buharManuelDownCounter 	= 0;
 
@@ -63,6 +65,9 @@ uint8_t turboCloseFlag	= 0;
 
 uint16_t alarmBuzzerPeriod = 1000;
 
+uint16_t islemdekiRecete = 0;
+//uint16_t receteAdimSayisiTable[DW_RECETE_AMOUNT];
+
 // 8 bitlik iki sayıyı 16 bitlik bir sayıya birleştiren fonksiyon
 uint16_t combineBytes(uint8_t highByte, uint8_t lowByte) {
     return ((uint16_t)highByte << 8) | lowByte;
@@ -73,17 +78,18 @@ void parse16BitTo8Bit(uint16_t value, uint8_t *highByte, uint8_t *lowByte) {
     *lowByte = (uint8_t)(value & 0xFF); // Düşük byte (LSB)
 }
 
-void convert_u8_to_u16(const uint8_t src[20], uint16_t dest[10])
+void convert_u8_to_u16(const uint8_t src[], uint16_t dest[], uint16_t size)
 {
-    for (int i = 0; i < 10; i++)
+
+    for (int i = 0; i < size/2 ; i++)
     {
         dest[i] = ((uint16_t)src[2 * i] << 8) | src[2 * i + 1];
     }
 }
 
-void convert_u16_to_u8(const uint16_t src[10], uint8_t dest[20])
+void convert_u16_to_u8(const uint16_t src[], uint8_t dest[], uint16_t size)
 {
-    for (int i = 0; i < 10; i++)
+    for (int i = 0; i < size/2 ; i++)
     {
         dest[2 * i + 1]     = (uint8_t)(src[i] & 0xFF);       // Lower byte
         dest[2 * i] = (uint8_t)((src[i] >> 8) & 0xFF);        // Higher byte
@@ -358,8 +364,8 @@ void changeMaxSetValue(uint16_t maxValue)
 
 		txBuffer[30] 	= 0xFE;
 
-		txBuffer[31] 	= 0x10;
-		txBuffer[32] 	= 0x64+(i*2);
+		txBuffer[31] 	= 0x15;
+		txBuffer[32] 	= 0x5F+(i*2);
 
 		txBuffer[33] 	= 0x00;
 
@@ -456,8 +462,8 @@ void changeMaxSetValue(uint16_t maxValue)
 
 		txBuffer[30] 	= 0xFE;
 
-		txBuffer[31] 	= 0x10;
-		txBuffer[32] 	= 0x64+(i*2);
+		txBuffer[31] 	= 0x15;
+		txBuffer[32] 	= 0x5F+(i*2);
 
 		txBuffer[33] 	= 0x00;
 
@@ -705,11 +711,6 @@ void DWIN_run(void)
 
 		if(DWIN.Init == 1)
 		{
-//			uint8_t testbuffer[20];
-//			DWIN_readRegister(testbuffer, 0x115F+(0*10), 20);
-//			SEGGER_RTT_printf(0,"recete name : %s\r\n",testbuffer);
-
-
 			calculate_temperature();
 
 			registerTable[DW_MCP9700_ADR] 		= temp.TMP;
@@ -719,14 +720,14 @@ void DWIN_run(void)
 			uint16_t sendData[3] = {(uint16_t)temp.TMP,temp.TC3,temp.TC2};
 			DWIN_writeRegiser(sendData, DW_MCP9700_ADR,sizeof(sendData));
 
-			if(registerTable[DW_MANUEL_MOD_GIRIS_ADR] == 1)
+			if(registerTable[REG_DW_MODE_INFO_ADR] == 1)
 			{
 				DWIN_arızaCheck();
 
 				if(registerTable[DW_ARIZA_PAGE_ADR] != 1)
 				{
-					DWIN_manuelProcess();
-					DWIN_manuelTurboProcess();
+					//DWIN_manuelProcess();
+					//DWIN_manuelTurboProcess();
 
 					PID_Run();
 				}
@@ -1277,20 +1278,21 @@ void DWIN_check(void)
 
 				DWIN_resetManuelPisirme();
 
-				uint16_t defaultReceteBuffer_u16[DW_RECETE_SIZE/2];
 
-				for(int i=0;i<DW_RECETE_AMOUNT;i++)
-				{
-					for(int j=0;j<(DW_RECETE_SIZE/2);j++)
-					{
-						defaultReceteBuffer_u16[j] = registerTable[DW_RECETE_ISIM_ILK_ADR + j + (i*(DW_RECETE_SIZE/2))];
-					}
-
-					DWIN_writeRegiser(defaultReceteBuffer_u16, DW_RECETE_ISIM_ILK_ADR + (i*(DW_RECETE_SIZE/2)), sizeof(defaultReceteBuffer_u16));
-
-					uint16_t writeDwin = registerTable[i+DW_RECETE_RESIM_ILK_ADR];
-					DWIN_writeRegiser(&writeDwin, DW_RECETE_RESIM_ILK_ADR + i, sizeof(writeDwin));
-				}
+//				uint16_t defaultReceteBuffer_u16[DW_RECETE_SIZE/2];
+//
+//				for(int i=0;i<DW_RECETE_AMOUNT;i++)
+//				{
+//					for(int j=0;j<(DW_RECETE_SIZE/2);j++)
+//					{
+//						defaultReceteBuffer_u16[j] = registerTable[DW_RECETE_ISIM_ILK_ADR + j + (i*(DW_RECETE_SIZE/2))];
+//					}
+//
+//					DWIN_writeRegiser(defaultReceteBuffer_u16, DW_RECETE_ISIM_ILK_ADR + (i*(DW_RECETE_SIZE/2)), sizeof(defaultReceteBuffer_u16));
+//
+//					uint16_t writeDwin = registerTable[i+DW_RECETE_RESIM_ILK_ADR];
+//					DWIN_writeRegiser(&writeDwin, DW_RECETE_RESIM_ILK_ADR + i, sizeof(writeDwin));
+//				}
 
 
 				DWIN.Init = 1;
@@ -1473,11 +1475,14 @@ void DWIN_answerProcess(void)
 
 		if(DWIN_receiveDataProcess() == READ_OK)
 		{
-			if(registerTable[DW_MANUEL_MOD_GIRIS_ADR] == 1)
+			DWIN_anaSayfa();
+
+			if(registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)
 				DWIN_manuelSayfa();
 
-			DWIN_anaSayfa();
-			DWIN_receteSayfa();
+
+			if(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_SAYFA_ENTER)
+				DWIN_receteSayfa();
 		}
 
 	}
@@ -1518,6 +1523,8 @@ void DWIN_anaSayfa(void)
 
 			if(data == 0)
 			{
+				registerTable[REG_DW_MODE_INFO_ADR] = DW_ANA_SAYFA_ENTER;
+
 				DWIN_resetManuelPisirme();
 //				TIM15->CCR2 = 0;
 //				TIM15->CCR1 = 0;
@@ -1527,13 +1534,28 @@ void DWIN_anaSayfa(void)
 
 			else if(data == 1)
 			{
+				registerTable[REG_DW_MODE_INFO_ADR] = DW_MANUEL_MODE_ENTER;
+
 				setOut(K14, data);
-				DWIN_enterManuelProcess();
+				//DWIN_enterManuelProcess();
 				PID_Setup();
 
 			}
 
-			registerTable[DW_MANUEL_MOD_GIRIS_ADR] = data;
+
+
+		break;
+
+		case DW_RECETE_SAYFA_ENTER_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == 0)
+				registerTable[REG_DW_MODE_INFO_ADR] = DW_ANA_SAYFA_ENTER;
+
+			if(data == 1)
+				registerTable[REG_DW_MODE_INFO_ADR] = DW_RECETE_SAYFA_ENTER;
+
 
 		break;
 
@@ -1749,6 +1771,10 @@ void DWIN_manuelSayfa(void)
 				altTurbo = 0;
 				ustOnTurbo = 0;
 				ustArkaTurbo = 0;
+			}
+			else
+			{
+				PID_Setup();
 			}
 			//setOut(K1|K3|K5|K6, data);
 
@@ -1984,6 +2010,7 @@ void DWIN_manuelSayfa(void)
 
 }
 
+
 void DWIN_receteSayfa(void)
 {
 	uint16_t addr = combineBytes(DWIN_rxBuffer[4], DWIN_rxBuffer[5]);
@@ -1996,17 +2023,158 @@ void DWIN_receteSayfa(void)
 		switch(data)
 		{
 			case 1:
-
+				// pisirme komutu
 			break;
 
 			case 2:
 
-				DWIN_changePage(35);
-				uint16_t test = 65;
-				DWIN_writeRegiser(&test, 0x1039, sizeof(test));
+				islemdekiRecete = addr;
+
+				uint16_t recete_num = addr - DW_RECETE_ILK_ADR + 1;
+
+				uint8_t receteAdimPageNumList[4] = {DW_PISIRME_DUZEN_PAGE1_ADR,
+													DW_PISIRME_DUZEN_PAGE2_ADR,
+													DW_PISIRME_DUZEN_PAGE3_ADR,
+													DW_PISIRME_DUZEN_PAGE4_ADR};
+
+				uint8_t recete_all_data_u8[EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE];
+
+				EEPROM_Read_Safe(&hi2c1, EE_RECETE_ILK_ADR + ((recete_num - 1)*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), recete_all_data_u8, sizeof(recete_all_data_u8));
+
+				for(int i=0;i<28;i++)
+				{
+					uint16_t writeData = combineBytes(recete_all_data_u8[i*2], recete_all_data_u8[(i*2)+1]);
+					DWIN_writeRegiser(&writeData, DW_RECETE_DUZ_UST_SIC_SET_ADR + (i*2), sizeof(writeData));
+				}
+
+				uint16_t receteResmi		=	combineBytes(recete_all_data_u8[76], recete_all_data_u8[77]);
+				uint16_t receteAdimSayisi 	= 	combineBytes(recete_all_data_u8[78], recete_all_data_u8[79]);
+				uint16_t receteAdi[DW_RECETE_ISIM_SIZE/2];
+
+				for(int i=0;i<10;i++)
+					receteAdi[i] = combineBytes(recete_all_data_u8[56+(i*2)], recete_all_data_u8[57+(i*2)]);
+
+				DWIN_writeRegiser(&recete_num, DW_RECETE_DUZ_NUM_ADR, sizeof(recete_num));
+				DWIN_writeRegiser(&receteResmi, DW_RECETE_DUZ_RESIM_ADR, sizeof(receteResmi));
+				DWIN_writeRegiser(&receteAdimSayisi, DW_RECETE_DUZ_ADIM_SAY_ADR, sizeof(receteAdimSayisi));
+				DWIN_writeRegiser(receteAdi, DW_RECETE_DUZ_ISIM_ADR, sizeof(receteAdi));
+
+
+				DWIN_changePage(receteAdimPageNumList[receteAdimSayisi - 1]);
+
+
 
 			break;
 
+		}
+	}
+
+	else if(addr == DW_RECETE_CIKIS_CMD)
+	{
+		uint16_t data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+		switch(data)
+		{
+			case 1:
+
+				uint16_t recete_num = islemdekiRecete - DW_RECETE_ILK_ADR + 1;
+
+				uint8_t Recete_data1_u8[EE_RECETE_DATA_SIZE - 2] 					= {0};
+				uint8_t Recete_data2_u8[EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE] 	= {0};
+				uint8_t recete_adimSayisi[2] 										= {0};
+				uint8_t recete_resim[2] 											= {0};
+				uint16_t recete_resim_u16[1] 										= {0};
+				uint8_t recete_isim[DW_RECETE_ISIM_SIZE] 							= {0};
+				uint16_t recete_isim_u16[DW_RECETE_ISIM_SIZE/2] 					= {0};
+
+				//////////////////////////////////////////////////////////////////////////////////////////////////////
+				DWIN_readRegister(recete_isim, DW_RECETE_DUZ_ISIM_ADR, sizeof(recete_isim));
+
+				uint8_t ff_check = 0;
+
+				for(int i=0;i<DW_RECETE_ISIM_SIZE;i++)
+				{
+					if(ff_check != 1)
+					{
+						if(recete_isim[i] == 0xFF)
+						{
+							recete_isim[i] = 0;
+							ff_check = 1;
+						}
+					}
+					else
+						recete_isim[i] = 0;
+				}
+				////////////////////////////////////////////////////////////////////////////////////////////////////
+				for(int i=0;i<(EE_RECETE_DATA_SIZE/2)-2;i++)
+				{
+					uint8_t readData[2];
+					DWIN_readRegister(readData, DW_RECETE_DUZ_UST_SIC_SET_ADR + (i*2), sizeof(readData));
+					Recete_data1_u8[(i*2)] = readData[0];
+					Recete_data1_u8[(i*2)+1] = readData[1];
+				}
+				//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+				DWIN_readRegister(recete_adimSayisi, DW_RECETE_DUZ_ADIM_SAY_ADR, sizeof(recete_adimSayisi));
+				DWIN_readRegister(recete_resim, DW_RECETE_DUZ_RESIM_ADR, sizeof(recete_resim));
+
+
+				for(int i=0;i<(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)-4;i++)
+				{
+					if(i<56)
+						Recete_data2_u8[i] = Recete_data1_u8[i];
+					else if(i<76)
+						Recete_data2_u8[i] = recete_isim[i - 56];
+
+				}
+
+				Recete_data2_u8[(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)-4] = recete_resim[0];
+				Recete_data2_u8[(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)-3] = recete_resim[1];
+
+				Recete_data2_u8[(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)-2] = recete_adimSayisi[0];
+				Recete_data2_u8[(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)-1] = recete_adimSayisi[1];
+
+				convert_u8_to_u16(recete_isim, recete_isim_u16, sizeof(recete_isim));
+				DWIN_writeRegiser(recete_isim_u16, DW_RECETE_ISIM_ILK_ADR + ((recete_num-1)*(DW_RECETE_ISIM_SIZE/2)), sizeof(recete_isim_u16));
+
+				convert_u8_to_u16(recete_resim, recete_resim_u16, sizeof(recete_resim));
+				DWIN_writeRegiser(recete_resim_u16, DW_RECETE_RESIM_ILK_ADR + (recete_num-1), sizeof(recete_resim_u16));
+
+				EEPROM_Write(&hi2c1, EE_RECETE_ILK_ADR + ((recete_num - 1)*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), Recete_data2_u8, sizeof(Recete_data2_u8));
+
+
+
+			break;
+
+		}
+		islemdekiRecete = 0;
+	}
+
+	else if((addr >= DW_UST_SICAKLIK_SET_ONAY_ADR)&&(addr <= DW_BUHAR_SURESI_SET_ONAY_ADR))
+	{
+		uint16_t data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+		if(data == 1)
+		{
+			uint16_t ortak_adress[7] ={	DW_UST_SICAKLIK_SET_ORT_ADR,
+										DW_ALT_SICAKLIK_SET_ORT_ADR,
+										DW_UST_ON_SET_ORT_ADR,
+										DW_UST_ARKA_SET_ORT_ADR,
+										DW_ALT_SET_ORT_ADR,
+										DW_PISIRME_SURESI_ORT_ADR,
+										DW_BUHAR_SURESI_ORT_ADR
+									};
+
+			uint8_t readBytes[4];
+
+			DWIN_readRegister(readBytes, ortak_adress[addr - DW_UST_SICAKLIK_SET_ONAY_ADR], sizeof(readBytes));
+			HAL_Delay(0);
+
+			uint16_t addres 		= combineBytes(readBytes[2], readBytes[3]);
+			uint16_t data_recete	= combineBytes(readBytes[0], readBytes[1]);
+
+			DWIN_writeRegiser(&data_recete, addres, sizeof(data_recete));
 		}
 	}
 }
@@ -2029,15 +2197,19 @@ void DWIN_resetManuelPisirme(void)
 	uint16_t data;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
+
 	registerTable[DW_PISIRME_SURESI_ADR] 	= registerTable[DW_PISIRME_SURESI_ORT_ADR];
 	registerTable[DW_PISIRME_SURESI_SN_ADR] = 0;
 	data = registerTable[DW_PISIRME_SURESI_ORT_ADR];
 	DWIN_writeRegiser(&data, DW_PISIRME_SURESI_ADR, sizeof(data));
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+
 	registerTable[DW_BUHAR_SURESI_ADR] 	= registerTable[DW_BUHAR_SURESI_ORT_ADR];
 	registerTable[DW_BUHAR_PUSKURTME_ADR] = 0;
 	data = registerTable[DW_BUHAR_SURESI_ORT_ADR];
 	DWIN_writeRegiser(&data, DW_BUHAR_SURESI_ADR, sizeof(data));
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	registerTable[DW_PISIRME_BASLATMA_ADR] 		= 0;

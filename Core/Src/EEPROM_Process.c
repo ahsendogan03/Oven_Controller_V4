@@ -33,7 +33,7 @@ uint16_t eepromAddrTable[14] = {	DW_UST_SICAKLIK_SET_ADR,
 							};
 
 extern uint16_t registerTable[9000];
-
+extern uint16_t receteAdimSayisiTable[DW_RECETE_AMOUNT];
 
 EEPROM_writeResponse AT24C256_WaitForReady(I2C_HandleTypeDef *hi2c) {
 
@@ -294,6 +294,11 @@ EEPROM_initResponse EEPROM_init(I2C_HandleTypeDef *hi2c)
 		if(response == EE_INIT_OK)
 			response = EEPROM_Recete_DefaultWrite(hi2c);
 
+		HAL_Delay(0);
+
+		if(response == EE_INIT_OK)
+			EEPROM_Recete_Read(hi2c);
+
 
 
 
@@ -307,42 +312,40 @@ EEPROM_initResponse EEPROM_Recete_DefaultWrite(I2C_HandleTypeDef *hi2c)
 
 	EEPROM_writeResponse check;
 
-	uint8_t defaultRecete[DW_RECETE_SIZE] = {'N','o',' ','N','a','m','e',0,0,0,0,0,0,0,0,0,0,0,0,0};
-	uint16_t defaultRecete_u16[10];
-	uint8_t defaultReceteData[DW_RECETE_SIZE*DW_RECETE_AMOUNT];
+	uint8_t defaultRecete_isim[DW_RECETE_ISIM_SIZE] 		= {'N','o',' ','N','a','m','e',0,0,0,0,0,0,0,0,0,0,0,0,0};
+	uint16_t defaultRecete_data[EE_RECETE_DATA_SIZE/2] 		= {	200, 200, 10, 20, 30, 60, 25,
+																200, 200, 10, 20, 30, 60, 25,
+																200, 200, 10, 20, 30, 60, 25,
+																200, 200, 10, 20, 30, 60, 25,
+																0, 	 3
+																};
 
-	uint16_t receteDefaultResim = 0;
-	uint8_t resimData[DW_RECETE_AMOUNT*2];
+	uint8_t defaultRecete_data1_u8[EE_RECETE_DATA_SIZE];
+	uint8_t defaultRecete_data2_u8[EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE];
 
-	uint8_t highByte 	= 0;
-	uint8_t lowByte		= 0;
+	convert_u16_to_u8(defaultRecete_data, defaultRecete_data1_u8, sizeof(defaultRecete_data));
 
-	convert_u8_to_u16(defaultRecete, defaultRecete_u16);
+	for(int i=0;i<EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE;i++)
+	{
+		if(i<56)
+			defaultRecete_data2_u8[i] = defaultRecete_data1_u8[i];
+		else if(i<76)
+			defaultRecete_data2_u8[i] = defaultRecete_isim[i - 56];
+		else
+			defaultRecete_data2_u8[i] = defaultRecete_data1_u8[i - 20];
+	}
+
+	uint8_t defaultRecete_allData_u8[(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)*DW_RECETE_AMOUNT];
 
 	for(int i=0;i<DW_RECETE_AMOUNT;i++)
 	{
-		for(int j=0;j<DW_RECETE_SIZE;j++)
+		for(int j=0;j<EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE;j++)
 		{
-			defaultReceteData[j+(i*DW_RECETE_SIZE)] = defaultRecete[j];
-
-			if(j%2)
-				registerTable[DW_RECETE_ISIM_ILK_ADR + (j/2) + (i*(DW_RECETE_SIZE/2))] = defaultRecete_u16[j/2];
+			defaultRecete_allData_u8[j+(i*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE))] = defaultRecete_data2_u8[j];
 		}
-
-		registerTable[DW_RECETE_RESIM_ILK_ADR + i] = receteDefaultResim;
-
-		parse16BitTo8Bit(receteDefaultResim, &highByte, &lowByte);
-		resimData[i*2] 		= highByte;
-		resimData[(i*2)+1] 	= lowByte;
 	}
 
-	check = EEPROM_Write(hi2c, EE_RECETE_ISIM_ILK_ADR, defaultReceteData, sizeof(defaultReceteData));
-
-	if(check == EE_WRITE_OK)
-		check = EEPROM_Write(hi2c, EE_RECETE_RESIM_ILK_ADR, resimData, sizeof(resimData));
-
-
-
+	check = EEPROM_Write(hi2c, EE_RECETE_ILK_ADR, defaultRecete_allData_u8, sizeof(defaultRecete_allData_u8));
 
 	if(check != EE_WRITE_OK)
 		response = EE_INIT_ERROR;
@@ -353,25 +356,26 @@ EEPROM_initResponse EEPROM_Recete_DefaultWrite(I2C_HandleTypeDef *hi2c)
 
 void EEPROM_Recete_Read(I2C_HandleTypeDef *hi2c)
 {
-	uint16_t Recete_isim_u16[DW_RECETE_SIZE/2];
-	uint8_t Recete_isim_u8[DW_RECETE_SIZE];
-
-	uint8_t Recete_resim_data[DW_RECETE_AMOUNT*2];
-
-	uint8_t ReceteIsimData[DW_RECETE_SIZE*DW_RECETE_AMOUNT];
-	EEPROM_Read_Safe(hi2c, EE_RECETE_ISIM_ILK_ADR, ReceteIsimData, sizeof(ReceteIsimData));
-	EEPROM_Read_Safe(hi2c, EE_RECETE_RESIM_ILK_ADR, Recete_resim_data, sizeof(Recete_resim_data));
-
 	for(int i=0;i<DW_RECETE_AMOUNT;i++)
 	{
-		for(int j=0;j<DW_RECETE_SIZE;j++)
-			Recete_isim_u8[j] = ReceteIsimData[j + (i*DW_RECETE_SIZE)];
+		uint8_t recete_isim_data_u8[DW_RECETE_ISIM_SIZE];
+		EEPROM_Read_Safe(hi2c, EE_RECETE_ILK_ADR + 56 +(i*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), recete_isim_data_u8, sizeof(recete_isim_data_u8));
 
-		convert_u8_to_u16(Recete_isim_u8, Recete_isim_u16);
+		uint16_t recete_isim_data_u16[DW_RECETE_ISIM_SIZE/2];
 
-		for(int k=0;k<(DW_RECETE_SIZE/2);k++)
-			registerTable[DW_RECETE_ISIM_ILK_ADR + k + (i*(DW_RECETE_SIZE/2))] = Recete_isim_u16[k];
+		for(int j=0;j<DW_RECETE_ISIM_SIZE/2;j++)
+		{
+			recete_isim_data_u16[j] = combineBytes(recete_isim_data_u8[j*2], recete_isim_data_u8[(j*2)+1]);
+		}
 
-		registerTable[i+DW_RECETE_RESIM_ILK_ADR] = combineBytes(Recete_resim_data[i*2], Recete_resim_data[(i*2)+1]);
+		DWIN_writeRegiser(recete_isim_data_u16, DW_RECETE_ISIM_ILK_ADR + (i*(DW_RECETE_ISIM_SIZE/2)), sizeof(recete_isim_data_u16));
+
+		uint8_t recete_resim_data_u8[2];
+		uint16_t recete_resim_data_16;
+
+		EEPROM_Read_Safe(hi2c, EE_RECETE_ILK_ADR + 76 + (i*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), recete_resim_data_u8, sizeof(recete_resim_data_u8));
+		recete_resim_data_16 = combineBytes(recete_resim_data_u8[0], recete_resim_data_u8[1]);
+
+		DWIN_writeRegiser(&recete_resim_data_16, DW_RECETE_RESIM_ILK_ADR + i, sizeof(recete_resim_data_16));
 	}
 }
