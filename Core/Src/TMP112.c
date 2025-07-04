@@ -26,7 +26,7 @@ HAL_StatusTypeDef TMP112_ReadTemperature(TMP112 *sensor, float *temperature)
 {
     uint8_t reg = TMP112_TEMP_REG;
     uint8_t data[2];
-    float offset = 1.0;
+    float offset = 0.0;
 
     if (HAL_I2C_Master_Transmit(sensor->hi2c, TMP112_ADDR, &reg, 1, HAL_MAX_DELAY) != HAL_OK)
         return HAL_ERROR;

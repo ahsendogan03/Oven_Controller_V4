@@ -115,6 +115,7 @@ void RTC_SetDateTime(uint8_t hour, uint8_t minute, uint8_t second, uint8_t day, 
 
 
 void RTC_GetDateTime(void) {
+
     RTC_TimeTypeDef sTime = {0};
     RTC_DateTypeDef sDate = {0};
 
@@ -127,9 +128,6 @@ void RTC_GetDateTime(void) {
 
     SEGGER_RTT_printf(0,"Saat: %02d:%02d:%02d\n", sTime.Hours, sTime.Minutes, sTime.Seconds);
     SEGGER_RTT_printf(0,"Tarih: %02d/%02d/20%02d  gun:%d\n", sDate.Date, sDate.Month, sDate.Year,sDate.WeekDay);
-
-
-
 
 }
 /* USER CODE END 0 */
@@ -203,6 +201,10 @@ void HAL_RTC_MspInit(RTC_HandleTypeDef* rtcHandle)
     __HAL_RCC_BKP_CLK_ENABLE();
     /* RTC clock enable */
     __HAL_RCC_RTC_ENABLE();
+
+    /* RTC interrupt Init */
+    HAL_NVIC_SetPriority(RTC_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(RTC_IRQn);
   /* USER CODE BEGIN RTC_MspInit 1 */
 
   /* USER CODE END RTC_MspInit 1 */
@@ -219,6 +221,9 @@ void HAL_RTC_MspDeInit(RTC_HandleTypeDef* rtcHandle)
   /* USER CODE END RTC_MspDeInit 0 */
     /* Peripheral clock disable */
     __HAL_RCC_RTC_DISABLE();
+
+    /* RTC interrupt Deinit */
+    HAL_NVIC_DisableIRQ(RTC_IRQn);
   /* USER CODE BEGIN RTC_MspDeInit 1 */
 
   /* USER CODE END RTC_MspDeInit 1 */

@@ -13,7 +13,9 @@
 
 /*---------------------------- SAYFALAR ------------------------------*/
 
-#define SURE_SONU_ADR				0x0053
+#define MANUEL_SURE_SONU_ADR			0x53
+#define RECETE_SURE_SONU_ADR			0x54
+
 #define DW_ARIZA_PAGE_ADR				85
 #define DW_PISIRME_PAGE_ADR				2
 
@@ -22,12 +24,16 @@
 #define DW_PISIRME_DUZEN_PAGE3_ADR		35
 #define DW_PISIRME_DUZEN_PAGE4_ADR		32
 
+#define DW_RECETE_PISIRME_PAGE_ADR		82
+
 /*--------------------------------- MODE INFO -------------------------------*/
 #define REG_DW_MODE_INFO_ADR			0x2000
 
 #define DW_ANA_SAYFA_ENTER				0
 #define DW_MANUEL_MODE_ENTER			1
 #define DW_RECETE_SAYFA_ENTER			2
+#define DW_RECETE_PISIRME_SAYFA_ENTER	3
+#define DW_RECETE_DUZEN_SAYFA_ENTER		4
 
 /*---------------------------- MANUEL SAYFASI ------------------------------*/
 
@@ -123,5 +129,22 @@
 #define DW_RECETE_DUZ_ADIM_SAY_ADR		0x107E
 #define DW_RECETE_DUZ_UST_SIC_SET_ADR	0x1039
 
+#define DW_RECETE_PISIR_UST_SIC_SET_ADR	0x1000
+#define DW_RECETE_PISIR_SURE_ADR		0x100A
+
+#define DW_RECETE_PISIRME_CMD			1
+#define DW_RECETE_DUZENLEME_CMD			2
+
+#define DW_RECETE_A1_ANIM_ADR			0x1082
+#define DW_RECETE_A2_ANIM_ADR			0x1084
+#define DW_RECETE_A3_ANIM_ADR			0x1086
+#define DW_RECETE_A4_ANIM_ADR			0x1088
+
+/*--------------------------------- TARIH/SAAT -----------------------------------*/
+
+#define DW_TARIH_SAAT_PAGE_ENTER_ADR	0x2500
+#define DW_FIRST_WRITE_RTC_ADR			0x009C
+#define DW_WRITE_RTC_DONE_MSG			0x5AA5
+#define DW_FIRST_READ_RTC_ADR			0x0010
 
 #endif /* INC_DWIN_ADRESS_H_ */

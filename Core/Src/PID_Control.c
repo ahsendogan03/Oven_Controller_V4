@@ -342,7 +342,8 @@ void TempSetPoint_Arrive_Check(void)
 
 void manual_pwm_update(void)
 {
-	if((registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
+	if(((registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)||(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER))&&
+		(registerTable[DW_ARIZA_PAGE_ADR] != 1))
 	{
 		// PWM1
 		if (pwm_counter < (pwm1_duty * 10))
@@ -368,7 +369,8 @@ void manual_pwm_update(void)
 
 void pwmOutProcess(void)
 {
-	if((registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
+	if(((registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)||(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER))&&
+		(registerTable[DW_ARIZA_PAGE_ADR] != 1))
 	{
 		shiftRefresh();
 	}

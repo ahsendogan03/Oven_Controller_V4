@@ -39,10 +39,6 @@ tickCounter counterTick;
 volatile uint16_t registerTable[9000];
 
 
-
-
-
-
 uint16_t pisirmeManuelDownCounter 	= 0;
 uint16_t buharManuelDownCounter 	= 0;
 
@@ -65,7 +61,8 @@ uint8_t turboCloseFlag	= 0;
 
 uint16_t alarmBuzzerPeriod = 1000;
 
-uint16_t islemdekiRecete = 0;
+uint16_t islemdekiRecete 		= 0;
+uint16_t islemdekiReceteAdim 	= 1;
 //uint16_t receteAdimSayisiTable[DW_RECETE_AMOUNT];
 
 // 8 bitlik iki sayıyı 16 bitlik bir sayıya birleştiren fonksiyon
@@ -111,6 +108,12 @@ uint16_t calculateCRC16Modbus(uint8_t *data, uint16_t length) {
     }
 
     return crc;
+}
+
+void HAL_RTCEx_RTCEventCallback(RTC_HandleTypeDef *hrtc)
+{
+	DWIN_manuelPisirmeSuresi_Calc();
+	DWIN_manuelBuharSuresi_Calc();
 }
 
 
@@ -567,8 +570,7 @@ DWIN_Response DWIN_writeRegiser(uint16_t* pBuffer, uint16_t addr, uint8_t len)
 			if (huart3.gState == HAL_UART_STATE_READY)
 			{
 
-				for(int i=0;i<50;i++)
-					DWIN_rxBuffer[i] = 0;
+				memset(DWIN_rxBuffer,0,sizeof(DWIN_rxBuffer));
 
 				DWIN.rxDoneFlag = 0;
 				HAL_UART_Transmit_IT(DWIN_huart_channel, txBuffer, sizeof(txBuffer));
@@ -720,17 +722,14 @@ void DWIN_run(void)
 			uint16_t sendData[3] = {(uint16_t)temp.TMP,temp.TC3,temp.TC2};
 			DWIN_writeRegiser(sendData, DW_MCP9700_ADR,sizeof(sendData));
 
-			if(registerTable[REG_DW_MODE_INFO_ADR] == 1)
+			if((registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)||(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER))
 			{
 				DWIN_arızaCheck();
 
 				if(registerTable[DW_ARIZA_PAGE_ADR] != 1)
-				{
-					//DWIN_manuelProcess();
-					//DWIN_manuelTurboProcess();
-
 					PID_Run();
-				}
+
+
 
 			}
 
@@ -1278,23 +1277,6 @@ void DWIN_check(void)
 
 				DWIN_resetManuelPisirme();
 
-
-//				uint16_t defaultReceteBuffer_u16[DW_RECETE_SIZE/2];
-//
-//				for(int i=0;i<DW_RECETE_AMOUNT;i++)
-//				{
-//					for(int j=0;j<(DW_RECETE_SIZE/2);j++)
-//					{
-//						defaultReceteBuffer_u16[j] = registerTable[DW_RECETE_ISIM_ILK_ADR + j + (i*(DW_RECETE_SIZE/2))];
-//					}
-//
-//					DWIN_writeRegiser(defaultReceteBuffer_u16, DW_RECETE_ISIM_ILK_ADR + (i*(DW_RECETE_SIZE/2)), sizeof(defaultReceteBuffer_u16));
-//
-//					uint16_t writeDwin = registerTable[i+DW_RECETE_RESIM_ILK_ADR];
-//					DWIN_writeRegiser(&writeDwin, DW_RECETE_RESIM_ILK_ADR + i, sizeof(writeDwin));
-//				}
-
-
 				DWIN.Init = 1;
 			}
 
@@ -1329,103 +1311,94 @@ void DWIN_check(void)
 	}
 }
 
+void DWIN_manuelPisirmeSuresi_Calc(void)
+{
+	if((registerTable[DW_PISIRME_BASLATMA_ADR] == 1)&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
+	{
+		pisirmeManuelDownCounter--;
 
+		uint16_t saniye = pisirmeManuelDownCounter % 60;
+		uint16_t dakika = pisirmeManuelDownCounter / 60;
+
+		registerTable[DW_PISIRME_SURESI_SN_ADR] = saniye;
+		registerTable[DW_PISIRME_SURESI_ADR] 	= dakika;
+	}
+}
+
+
+uint16_t pisirmeManuelDownCounter_eski = 0;
 void DWIN_manuelPisirmeSuresi(void)
 {
 	if((registerTable[DW_PISIRME_BASLATMA_ADR] == 1)&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
 	{
-		if((HAL_GetTick() - counterTick.pisirmeSuresi) >= 300)
+
+		if(pisirmeManuelDownCounter_eski != pisirmeManuelDownCounter)
 		{
-			counterTick.pisirmeSuresi = HAL_GetTick();
+			pisirmeManuelDownCounter_eski = pisirmeManuelDownCounter;
 
-		    RTC_TimeTypeDef sTime = {0};
-		    RTC_DateTypeDef sDate = {0};
+			uint16_t saniye = registerTable[DW_PISIRME_SURESI_SN_ADR];
+			uint16_t dakika = registerTable[DW_PISIRME_SURESI_ADR];
 
-		    //Saat bilgisi oku
-		    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+			DWIN_writeRegiser(&saniye, DW_PISIRME_SURESI_SN_ADR, sizeof(saniye));
+			DWIN_writeRegiser(&dakika, DW_PISIRME_SURESI_ADR, sizeof(saniye));
 
-		    // Tarih bilgisi oku
-		    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+			if(pisirmeManuelDownCounter <= 0)
+			{
+				pisirmeSonuAlarmFlag = 1;
+				setOut(K10, 1);
+				pisirmeSonuAlarmBuzzer = 0;
+				registerTable[DW_PISIRME_BASLATMA_ADR] = 0;
+				registerTable[MANUEL_SURE_SONU_ADR] = 1;
 
-
-		    if(rtcSecondPisirme != sTime.Seconds)
-		    {
-		    	rtcSecondPisirme = sTime.Seconds;
-
-				pisirmeManuelDownCounter--;
-
-				uint16_t saniye = pisirmeManuelDownCounter % 60;
-				uint16_t dakika = pisirmeManuelDownCounter / 60;
-
-				registerTable[DW_PISIRME_SURESI_SN_ADR] = saniye;
-				registerTable[DW_PISIRME_SURESI_ADR] 	= dakika;
-
-				DWIN_writeRegiser(&saniye, DW_PISIRME_SURESI_SN_ADR, sizeof(saniye));
-				DWIN_writeRegiser(&dakika, DW_PISIRME_SURESI_ADR, sizeof(saniye));
-
-
-				counterTick.pisirmeSuresi = HAL_GetTick();
-
-				if(pisirmeManuelDownCounter <= 0)
-				{
-					pisirmeSonuAlarmFlag = 1;
-					pisirmeSonuAlarmBuzzer = 0;
-					registerTable[DW_PISIRME_BASLATMA_ADR] = 0;
-					registerTable[SURE_SONU_ADR] = 1;
-					DWIN_changePage(SURE_SONU_ADR);
-				}
+				if(registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)
+					DWIN_changePage(MANUEL_SURE_SONU_ADR);
+				else if(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER)
+					DWIN_changePage(RECETE_SURE_SONU_ADR);
 			}
 
+			DWIN_recetePisirmeAdimProcess();
 		}
 	}
 
+
+
 }
 
+void DWIN_manuelBuharSuresi_Calc(void)
+{
+	if((registerTable[DW_BUHAR_PUSKURTME_ADR] == 1)&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
+	{
+		buharManuelDownCounter--;
+
+		uint16_t saniye = buharManuelDownCounter;
+
+		registerTable[DW_BUHAR_SURESI_ADR] = saniye;
+	}
+}
+
+uint16_t buharManuelDownCounter_eski = 0;
 void DWIN_manuelBuharSuresi(void)
 {
 	if((registerTable[DW_BUHAR_PUSKURTME_ADR] == 1)&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
 	{
-		if((HAL_GetTick() - counterTick.buharSuresi) >= 300)
+		if(buharManuelDownCounter_eski != buharManuelDownCounter)
 		{
-			counterTick.buharSuresi = HAL_GetTick();
+			buharManuelDownCounter_eski = buharManuelDownCounter;
 
-		    RTC_TimeTypeDef sTime = {0};
-		    RTC_DateTypeDef sDate = {0};
+			uint16_t saniye = registerTable[DW_BUHAR_SURESI_ADR];
+			DWIN_writeRegiser(&saniye, DW_BUHAR_SURESI_ADR, sizeof(saniye));
 
-		    //Saat bilgisi oku
-		    HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+			if(buharManuelDownCounter <= 0)
+			{
+				registerTable[DW_BUHAR_SURESI_ADR] 	= registerTable[DW_BUHAR_SURESI_ORT_ADR];
+				registerTable[DW_BUHAR_PUSKURTME_ADR] = 0;
+				uint16_t data = registerTable[DW_BUHAR_SURESI_ORT_ADR];
+				DWIN_writeRegiser(&data, DW_BUHAR_SURESI_ADR, sizeof(data));
 
-		    // Tarih bilgisi oku
-		    HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+				data = 0;
+				DWIN_writeRegiser(&data, DW_BUHAR_PUSKURTME_ADR, sizeof(data));
 
-
-		    if(rtcSecondBuhar != sTime.Seconds)
-		    {
-		    	rtcSecondBuhar = sTime.Seconds;
-
-				buharManuelDownCounter--;
-
-				uint16_t saniye = buharManuelDownCounter;
-
-				registerTable[DW_BUHAR_SURESI_ADR] = saniye;
-
-				DWIN_writeRegiser(&saniye, DW_BUHAR_SURESI_ADR, sizeof(saniye));
-
-				counterTick.buharSuresi = HAL_GetTick();
-
-				if(buharManuelDownCounter <= 0)
-				{
-					registerTable[DW_BUHAR_SURESI_ADR] 	= registerTable[DW_BUHAR_SURESI_ORT_ADR];
-					registerTable[DW_BUHAR_PUSKURTME_ADR] = 0;
-					uint16_t data = registerTable[DW_BUHAR_SURESI_ORT_ADR];
-					DWIN_writeRegiser(&data, DW_BUHAR_SURESI_ADR, sizeof(data));
-
-					data = 0;
-					DWIN_writeRegiser(&data, DW_BUHAR_PUSKURTME_ADR, sizeof(data));
-
-					setOut(K9, 0);
-				}
-
+				setOut(K9, 0);
 			}
 
 		}
@@ -1477,11 +1450,13 @@ void DWIN_answerProcess(void)
 		{
 			DWIN_anaSayfa();
 
-			if(registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)
+			if((registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)||(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER))
 				DWIN_manuelSayfa();
 
 
-			if(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_SAYFA_ENTER)
+			else if((registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_SAYFA_ENTER)||
+					(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER)||
+					(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_DUZEN_SAYFA_ENTER))
 				DWIN_receteSayfa();
 		}
 
@@ -1690,6 +1665,21 @@ void DWIN_anaSayfa(void)
 			pisirmeSonuAlarmFlag = 0;
 			pisirmeSonuAlarmBuzzer = 0;
 			setOut(BUZZER, 0);
+			setOut(K10, 0);
+
+		break;
+
+		case DW_TARIH_SAAT_PAGE_ENTER_ADR:
+
+			data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+			if(data == 1)
+			{
+				uint8_t saniye, dakika, saat, gun, hafta ,ay, yil;
+
+				DWIN_readRTC(&saniye, &dakika, &saat, &hafta, &gun, &ay, &yil);
+				DWIN_writeRTC(saniye, dakika, saat, gun, ay, yil, 0);
+			}
 
 		break;
 
@@ -1748,7 +1738,7 @@ void DWIN_manuelSayfa(void)
 				setOut(K9, 1);
 
 				registerTable[DW_BUHAR_PUSKURTME_ADR] = data;
-				buharManuelDownCounter = registerTable[DW_BUHAR_SURESI_ADR] + 1;
+				buharManuelDownCounter = registerTable[DW_BUHAR_SURESI_ADR];
 				registerTable[DW_BUHAR_SURESI_ORT_ADR] = registerTable[DW_BUHAR_SURESI_ADR];
 			}
 
@@ -1944,7 +1934,7 @@ void DWIN_manuelSayfa(void)
 				if(registerTable[DW_PISIRME_BASLATMA_ADR] != 1)
 				{
 					registerTable[DW_PISIRME_BASLATMA_ADR] = data;
-					pisirmeManuelDownCounter = (registerTable[DW_PISIRME_SURESI_ADR] * 60) + 1;
+					pisirmeManuelDownCounter = (registerTable[DW_PISIRME_SURESI_ADR] * 60);
 					registerTable[DW_PISIRME_SURESI_ORT_ADR] = registerTable[DW_PISIRME_SURESI_ADR];
 				}
 			}
@@ -1985,13 +1975,14 @@ void DWIN_manuelSayfa(void)
 				pisirmeSonuAlarmFlag = 0;
 				pisirmeSonuAlarmBuzzer = 0;
 				setOut(BUZZER, 0);
+				setOut(K10, 0);
 
 				registerTable[DW_PISIRME_BASLATMA_ADR] = 0;
 
 				data = registerTable[DW_PISIRME_SURESI_ORT_ADR];
 				registerTable[DW_PISIRME_SURESI_ADR] 	= registerTable[DW_PISIRME_SURESI_ORT_ADR];
 				registerTable[DW_PISIRME_SURESI_SN_ADR] = 0;
-				registerTable[SURE_SONU_ADR] 			= 0;
+				registerTable[MANUEL_SURE_SONU_ADR] 	= 0;
 
 				DWIN_writeRegiser(&data, DW_PISIRME_SURESI_ADR, sizeof(data));
 
@@ -2018,28 +2009,93 @@ void DWIN_receteSayfa(void)
 	if((addr >= DW_RECETE_ILK_ADR)&&(addr <= DW_RECETE_SON_ADR))
 	{
 
+		islemdekiRecete = addr;
+
 		uint16_t data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+		uint16_t recete_num = addr - DW_RECETE_ILK_ADR + 1;
+
+		uint16_t receteAdimPageNumList[4] = {DW_PISIRME_DUZEN_PAGE1_ADR,
+											DW_PISIRME_DUZEN_PAGE2_ADR,
+											DW_PISIRME_DUZEN_PAGE3_ADR,
+											DW_PISIRME_DUZEN_PAGE4_ADR};
+
+		uint8_t recete_all_data_u8[EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE] = {0};
+
+		EEPROM_Read_Safe(&hi2c1, EE_RECETE_ILK_ADR + ((recete_num - 1)*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), recete_all_data_u8, sizeof(recete_all_data_u8));
+
+		uint16_t receteResmi		=	combineBytes(recete_all_data_u8[76], recete_all_data_u8[77]);
+		uint16_t receteAdimSayisi 	= 	combineBytes(recete_all_data_u8[78], recete_all_data_u8[79]);
+		uint16_t receteAdi[DW_RECETE_ISIM_SIZE/2];
+
+		for(int i=0;i<10;i++)
+			receteAdi[i] = combineBytes(recete_all_data_u8[56+(i*2)], recete_all_data_u8[57+(i*2)]);
+
+		DWIN_writeRegiser(&recete_num, DW_RECETE_DUZ_NUM_ADR, sizeof(recete_num));
+		DWIN_writeRegiser(&receteResmi, DW_RECETE_DUZ_RESIM_ADR, sizeof(receteResmi));
+		DWIN_writeRegiser(&receteAdimSayisi, DW_RECETE_DUZ_ADIM_SAY_ADR, sizeof(receteAdimSayisi));
+		DWIN_writeRegiser(receteAdi, DW_RECETE_DUZ_ISIM_ADR, sizeof(receteAdi));
 
 		switch(data)
 		{
-			case 1:
-				// pisirme komutu
+
+			case DW_RECETE_PISIRME_CMD:
+
+				islemdekiReceteAdim = 1;
+
+				registerTable[REG_DW_MODE_INFO_ADR] = DW_RECETE_PISIRME_SAYFA_ENTER;
+
+				for(int i=0;i<((EE_RECETE_DATA_SIZE-4)/4)/2;i++)
+				{
+					uint16_t recete_pisirme_param = combineBytes(recete_all_data_u8[i*2], recete_all_data_u8[(i*2)+1]);
+					DWIN_writeRegiser(&recete_pisirme_param, DW_RECETE_PISIR_UST_SIC_SET_ADR + (i*2), sizeof(recete_pisirme_param));
+					registerTable[DW_RECETE_PISIR_UST_SIC_SET_ADR + (i*2)] = recete_pisirme_param;
+				}
+
+
+
+				uint16_t recete_pisirme_top_sure = 0;
+
+				for(int i=0;i<receteAdimSayisi;i++)
+					recete_pisirme_top_sure += combineBytes(recete_all_data_u8[(i*(EE_RECETE_DATA_SIZE-4)/4) + 10], recete_all_data_u8[(i*(EE_RECETE_DATA_SIZE-4)/4) + 11]);
+
+				DWIN_writeRegiser(&recete_pisirme_top_sure, DW_RECETE_PISIR_SURE_ADR, sizeof(recete_pisirme_top_sure));
+
+				registerTable[DW_PISIRME_SURESI_ADR] = recete_pisirme_top_sure;
+				registerTable[DW_PISIRME_SURESI_ORT_ADR] 	= registerTable[DW_PISIRME_SURESI_ADR];
+				registerTable[DW_BUHAR_SURESI_ORT_ADR] 		= registerTable[DW_BUHAR_SURESI_ADR];
+
+				DWIN_changePage(DW_RECETE_PISIRME_PAGE_ADR);
+
+				uint16_t adim_anim_list[4]= {DW_RECETE_A1_ANIM_ADR,
+											DW_RECETE_A2_ANIM_ADR,
+											DW_RECETE_A3_ANIM_ADR,
+											DW_RECETE_A4_ANIM_ADR
+				};
+
+				uint16_t adim_anim_active_num[4]= {1,5,9,13};
+
+				for(int i=0;i<receteAdimSayisi;i++)
+				{
+					uint16_t writeData = adim_anim_active_num[i];
+					DWIN_writeRegiser(&writeData, adim_anim_list[i], sizeof(writeData));
+				}
+
+				for(int i=receteAdimSayisi;i<4;i++)
+				{
+					uint16_t writeData = 0x16;
+					DWIN_writeRegiser(&writeData, adim_anim_list[i], sizeof(writeData));
+				}
+
+				setOut(K14, data);
+				//DWIN_enterManuelProcess();
+				PID_Setup();
+
 			break;
 
-			case 2:
+			case DW_RECETE_DUZENLEME_CMD:
 
-				islemdekiRecete = addr;
-
-				uint16_t recete_num = addr - DW_RECETE_ILK_ADR + 1;
-
-				uint8_t receteAdimPageNumList[4] = {DW_PISIRME_DUZEN_PAGE1_ADR,
-													DW_PISIRME_DUZEN_PAGE2_ADR,
-													DW_PISIRME_DUZEN_PAGE3_ADR,
-													DW_PISIRME_DUZEN_PAGE4_ADR};
-
-				uint8_t recete_all_data_u8[EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE];
-
-				EEPROM_Read_Safe(&hi2c1, EE_RECETE_ILK_ADR + ((recete_num - 1)*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), recete_all_data_u8, sizeof(recete_all_data_u8));
+				registerTable[REG_DW_MODE_INFO_ADR] = DW_RECETE_DUZEN_SAYFA_ENTER;
 
 				for(int i=0;i<28;i++)
 				{
@@ -2047,21 +2103,7 @@ void DWIN_receteSayfa(void)
 					DWIN_writeRegiser(&writeData, DW_RECETE_DUZ_UST_SIC_SET_ADR + (i*2), sizeof(writeData));
 				}
 
-				uint16_t receteResmi		=	combineBytes(recete_all_data_u8[76], recete_all_data_u8[77]);
-				uint16_t receteAdimSayisi 	= 	combineBytes(recete_all_data_u8[78], recete_all_data_u8[79]);
-				uint16_t receteAdi[DW_RECETE_ISIM_SIZE/2];
-
-				for(int i=0;i<10;i++)
-					receteAdi[i] = combineBytes(recete_all_data_u8[56+(i*2)], recete_all_data_u8[57+(i*2)]);
-
-				DWIN_writeRegiser(&recete_num, DW_RECETE_DUZ_NUM_ADR, sizeof(recete_num));
-				DWIN_writeRegiser(&receteResmi, DW_RECETE_DUZ_RESIM_ADR, sizeof(receteResmi));
-				DWIN_writeRegiser(&receteAdimSayisi, DW_RECETE_DUZ_ADIM_SAY_ADR, sizeof(receteAdimSayisi));
-				DWIN_writeRegiser(receteAdi, DW_RECETE_DUZ_ISIM_ADR, sizeof(receteAdi));
-
-
 				DWIN_changePage(receteAdimPageNumList[receteAdimSayisi - 1]);
-
 
 
 			break;
@@ -2076,6 +2118,8 @@ void DWIN_receteSayfa(void)
 		switch(data)
 		{
 			case 1:
+
+				registerTable[REG_DW_MODE_INFO_ADR] = DW_RECETE_SAYFA_ENTER;
 
 				uint16_t recete_num = islemdekiRecete - DW_RECETE_ILK_ADR + 1;
 
@@ -2179,6 +2223,225 @@ void DWIN_receteSayfa(void)
 	}
 }
 
+void DWIN_recetePisirmeAdimProcess(void)
+{
+	if(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER)
+	{
+		uint16_t recete_eeprom_location = islemdekiRecete - DW_RECETE_ILK_ADR;
+
+		uint8_t recete_all_data_u8[EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE] = {0};
+
+		EEPROM_Read_Safe(&hi2c1, EE_RECETE_ILK_ADR + (recete_eeprom_location *(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), recete_all_data_u8, sizeof(recete_all_data_u8));
+
+		uint16_t receteAdimSayisi = combineBytes(recete_all_data_u8[78], recete_all_data_u8[79]);
+
+		uint16_t receteAdimSure[4] = {0};
+
+		for(int i=0;i<receteAdimSayisi;i++)
+			receteAdimSure[i] = 60 * combineBytes(recete_all_data_u8[(i*(EE_RECETE_DATA_SIZE-4)/4) + 10], recete_all_data_u8[(i*(EE_RECETE_DATA_SIZE-4)/4) + 11]);
+
+		if(pisirmeManuelDownCounter > ((registerTable[DW_PISIRME_SURESI_ORT_ADR] * 60) - receteAdimSure[0]))
+		{
+			if(islemdekiReceteAdim != 1)
+			{
+				islemdekiReceteAdim = 1;
+				SEGGER_RTT_printf(0,"A1 AKTIF !!!\r\n");
+
+				uint16_t recete_num = islemdekiRecete - DW_RECETE_ILK_ADR + 1;
+
+				uint8_t recete_all_data_u8[EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE] = {0};
+
+				EEPROM_Read_Safe(&hi2c1, EE_RECETE_ILK_ADR + ((recete_num - 1)*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), recete_all_data_u8, sizeof(recete_all_data_u8));
+
+				uint8_t islemdeki_recete_buffer_loc = (islemdekiReceteAdim - 1)*(((EE_RECETE_DATA_SIZE-4)/4)/2);
+
+				uint16_t receteAdimSayisi 	= 	combineBytes(recete_all_data_u8[78], recete_all_data_u8[79]);
+
+				for(int i= 0 + islemdeki_recete_buffer_loc; i<(((EE_RECETE_DATA_SIZE-4)/4)/2) + islemdeki_recete_buffer_loc; i++)
+				{
+					uint16_t recete_pisirme_param = combineBytes(recete_all_data_u8[i*2], recete_all_data_u8[(i*2)+1]);
+					DWIN_writeRegiser(&recete_pisirme_param, DW_RECETE_PISIR_UST_SIC_SET_ADR + ((i - islemdeki_recete_buffer_loc)*2), sizeof(recete_pisirme_param));
+					registerTable[DW_RECETE_PISIR_UST_SIC_SET_ADR + ((i - islemdeki_recete_buffer_loc)*2)] = recete_pisirme_param;
+				}
+
+				uint16_t adim_anim_list[4]= {DW_RECETE_A1_ANIM_ADR,
+											DW_RECETE_A2_ANIM_ADR,
+											DW_RECETE_A3_ANIM_ADR,
+											DW_RECETE_A4_ANIM_ADR
+				};
+
+				uint16_t anim_bitirme = 0;
+				uint16_t anim_baslatma = 1;
+
+				uint16_t adim_anim_active_num[4]= {1,5,9,13};
+
+				for(int i=0;i<receteAdimSayisi;i++)
+				{
+					uint16_t writeData = adim_anim_active_num[i];
+					DWIN_writeRegiser(&writeData, adim_anim_list[i], sizeof(writeData));
+				}
+
+				for(int i=receteAdimSayisi;i<4;i++)
+				{
+					uint16_t writeData = 0x16;
+					DWIN_writeRegiser(&writeData, adim_anim_list[i], sizeof(writeData));
+				}
+
+				for(int i=0;i<islemdekiReceteAdim;i++)
+				{
+					if((islemdekiReceteAdim - 1) == i)
+						DWIN_writeRegiser(&anim_baslatma, adim_anim_list[i], sizeof(anim_baslatma));
+
+					else
+						DWIN_writeRegiser(&anim_bitirme, adim_anim_list[i], sizeof(anim_bitirme));
+				}
+
+				PID_Setup();
+			}
+		}
+
+		else if(pisirmeManuelDownCounter > ((registerTable[DW_PISIRME_SURESI_ORT_ADR] * 60) - (receteAdimSure[0] + receteAdimSure[1])))
+		{
+			if(islemdekiReceteAdim != 2)
+			{
+				islemdekiReceteAdim = 2;
+				SEGGER_RTT_printf(0,"A2 AKTIF !!!\r\n");
+
+				uint16_t recete_num = islemdekiRecete - DW_RECETE_ILK_ADR + 1;
+
+				uint8_t recete_all_data_u8[EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE] = {0};
+
+				EEPROM_Read_Safe(&hi2c1, EE_RECETE_ILK_ADR + ((recete_num - 1)*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), recete_all_data_u8, sizeof(recete_all_data_u8));
+
+				uint8_t islemdeki_recete_buffer_loc = (islemdekiReceteAdim - 1)*(((EE_RECETE_DATA_SIZE-4)/4)/2);
+
+				//uint16_t receteAdimSayisi 	= 	combineBytes(recete_all_data_u8[78], recete_all_data_u8[79]);
+
+				for(int i= 0 + islemdeki_recete_buffer_loc; i<(((EE_RECETE_DATA_SIZE-4)/4)/2) + islemdeki_recete_buffer_loc; i++)
+				{
+					uint16_t recete_pisirme_param = combineBytes(recete_all_data_u8[i*2], recete_all_data_u8[(i*2)+1]);
+					DWIN_writeRegiser(&recete_pisirme_param, DW_RECETE_PISIR_UST_SIC_SET_ADR + ((i - islemdeki_recete_buffer_loc)*2), sizeof(recete_pisirme_param));
+					registerTable[DW_RECETE_PISIR_UST_SIC_SET_ADR + ((i - islemdeki_recete_buffer_loc)*2)] = recete_pisirme_param;
+				}
+
+				uint16_t adim_anim_list[4]= {DW_RECETE_A1_ANIM_ADR,
+											DW_RECETE_A2_ANIM_ADR,
+											DW_RECETE_A3_ANIM_ADR,
+											DW_RECETE_A4_ANIM_ADR
+				};
+
+				uint16_t anim_bitirme = 0;
+				uint16_t anim_baslatma = 1;
+
+				for(int i=0;i<islemdekiReceteAdim;i++)
+				{
+					if((islemdekiReceteAdim - 1) == i)
+						DWIN_writeRegiser(&anim_baslatma, adim_anim_list[i], sizeof(anim_baslatma));
+
+					else
+						DWIN_writeRegiser(&anim_bitirme, adim_anim_list[i], sizeof(anim_bitirme));
+
+				}
+
+				PID_Setup();
+			}
+		}
+		else if(pisirmeManuelDownCounter > ((registerTable[DW_PISIRME_SURESI_ORT_ADR] * 60) - (receteAdimSure[0] + receteAdimSure[1] + receteAdimSure[2])))
+		{
+			if(islemdekiReceteAdim != 3)
+			{
+				islemdekiReceteAdim = 3;
+				SEGGER_RTT_printf(0,"A3 AKTIF !!!\r\n");
+
+				uint16_t recete_num = islemdekiRecete - DW_RECETE_ILK_ADR + 1;
+
+				uint8_t recete_all_data_u8[EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE] = {0};
+
+				EEPROM_Read_Safe(&hi2c1, EE_RECETE_ILK_ADR + ((recete_num - 1)*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), recete_all_data_u8, sizeof(recete_all_data_u8));
+
+				uint8_t islemdeki_recete_buffer_loc = (islemdekiReceteAdim - 1)*(((EE_RECETE_DATA_SIZE-4)/4)/2);
+
+				//uint16_t receteAdimSayisi 	= 	combineBytes(recete_all_data_u8[78], recete_all_data_u8[79]);
+
+				for(int i= 0 + islemdeki_recete_buffer_loc; i<(((EE_RECETE_DATA_SIZE-4)/4)/2) + islemdeki_recete_buffer_loc; i++)
+				{
+					uint16_t recete_pisirme_param = combineBytes(recete_all_data_u8[i*2], recete_all_data_u8[(i*2)+1]);
+					DWIN_writeRegiser(&recete_pisirme_param, DW_RECETE_PISIR_UST_SIC_SET_ADR + ((i - islemdeki_recete_buffer_loc)*2), sizeof(recete_pisirme_param));
+					registerTable[DW_RECETE_PISIR_UST_SIC_SET_ADR + ((i - islemdeki_recete_buffer_loc)*2)] = recete_pisirme_param;
+				}
+
+				uint16_t adim_anim_list[4]= {DW_RECETE_A1_ANIM_ADR,
+											DW_RECETE_A2_ANIM_ADR,
+											DW_RECETE_A3_ANIM_ADR,
+											DW_RECETE_A4_ANIM_ADR
+				};
+
+				uint16_t anim_bitirme = 0;
+				uint16_t anim_baslatma = 1;
+
+				for(int i=0;i<islemdekiReceteAdim;i++)
+				{
+					if((islemdekiReceteAdim - 1) == i)
+						DWIN_writeRegiser(&anim_baslatma, adim_anim_list[i], sizeof(anim_baslatma));
+
+					else
+						DWIN_writeRegiser(&anim_bitirme, adim_anim_list[i], sizeof(anim_bitirme));
+
+				}
+
+				PID_Setup();
+			}
+		}
+		else if(pisirmeManuelDownCounter > ((registerTable[DW_PISIRME_SURESI_ORT_ADR] * 60) - (receteAdimSure[0] + receteAdimSure[1] + receteAdimSure[2] + receteAdimSure[3])))
+		{
+			if(islemdekiReceteAdim != 4)
+			{
+				islemdekiReceteAdim = 4;
+				SEGGER_RTT_printf(0,"A4 AKTIF !!!\r\n");
+
+				uint16_t recete_num = islemdekiRecete - DW_RECETE_ILK_ADR + 1;
+
+				uint8_t recete_all_data_u8[EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE] = {0};
+
+				EEPROM_Read_Safe(&hi2c1, EE_RECETE_ILK_ADR + ((recete_num - 1)*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), recete_all_data_u8, sizeof(recete_all_data_u8));
+
+				uint8_t islemdeki_recete_buffer_loc = (islemdekiReceteAdim - 1)*(((EE_RECETE_DATA_SIZE-4)/4)/2);
+
+				//uint16_t receteAdimSayisi 	= 	combineBytes(recete_all_data_u8[78], recete_all_data_u8[79]);
+
+				for(int i= 0 + islemdeki_recete_buffer_loc; i<(((EE_RECETE_DATA_SIZE-4)/4)/2) + islemdeki_recete_buffer_loc; i++)
+				{
+					uint16_t recete_pisirme_param = combineBytes(recete_all_data_u8[i*2], recete_all_data_u8[(i*2)+1]);
+					DWIN_writeRegiser(&recete_pisirme_param, DW_RECETE_PISIR_UST_SIC_SET_ADR + ((i - islemdeki_recete_buffer_loc)*2), sizeof(recete_pisirme_param));
+					registerTable[DW_RECETE_PISIR_UST_SIC_SET_ADR + ((i - islemdeki_recete_buffer_loc)*2)] = recete_pisirme_param;
+				}
+
+				uint16_t adim_anim_list[4]= {DW_RECETE_A1_ANIM_ADR,
+											DW_RECETE_A2_ANIM_ADR,
+											DW_RECETE_A3_ANIM_ADR,
+											DW_RECETE_A4_ANIM_ADR
+				};
+
+				uint16_t anim_bitirme = 0;
+				uint16_t anim_baslatma = 1;
+
+				for(int i=0;i<islemdekiReceteAdim;i++)
+				{
+					if((islemdekiReceteAdim - 1) == i)
+						DWIN_writeRegiser(&anim_baslatma, adim_anim_list[i], sizeof(anim_baslatma));
+
+					else
+						DWIN_writeRegiser(&anim_bitirme, adim_anim_list[i], sizeof(anim_bitirme));
+
+				}
+
+				PID_Setup();
+			}
+		}
+
+	}
+}
+
 void DWIN_resetManuelPisirme(void)
 {
 	pisirmeSonuAlarmFlag = 0;
@@ -2192,7 +2455,8 @@ void DWIN_resetManuelPisirme(void)
 	ustOnTurbo 		= 0;
 	alarmBuzzerPeriod = 1000;
 
-	setOut(K8|K9|BUZZER|K1|K2|K3|K4|K5|K6|K14, 0);
+	setOut(K8|K9|BUZZER|K1|K2|K3|K4|K5|K6|K14|K10, 0);
+
 
 	uint16_t data;
 
@@ -2222,7 +2486,7 @@ void DWIN_resetManuelPisirme(void)
 	registerTable[DW_ALT_SICAKLIK_ANIM] 		= 0;
 	registerTable[DW_ALT_ANIM] 					= 0;
 	registerTable[DW_ARIZA_PAGE_ADR]			= 0;
-	registerTable[SURE_SONU_ADR] 				= 0;
+	registerTable[MANUEL_SURE_SONU_ADR] 		= 0;
 	registerTable[DW_BUHAR_HAZIR_ANIM]			= 0;
 	registerTable[DW_ARIZA_ALARM_SUSTURMA_ADR]	= 0;
 
@@ -2292,6 +2556,7 @@ void DWIN_arızaCheck(void)
 		registerTable[DW_ARIZA_PAGE_ADR] = 1;
 		DWIN_changePage(DW_ARIZA_PAGE_ADR);
 		setOut(K1|K2|K3|K4|K5|K6, 0);
+		setOut(K10, 1);
 		pisirmeSonuAlarmFlag = 1;
 		alarmBuzzerPeriod = 200;
 	}
@@ -2302,17 +2567,31 @@ void DWIN_arızaCheck(void)
 		registerTable[DW_ARIZA_ALARM_SUSTURMA_ADR] = 0;
 		uint16_t data = 0;
 		DWIN_writeRegiser(&data, DW_ARIZA_ALARM_SUSTURMA_ADR, sizeof(data));
-		DWIN_changePage(DW_PISIRME_PAGE_ADR);
-		if(registerTable[SURE_SONU_ADR] != 1)
+
+		if(registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)
+			DWIN_changePage(DW_PISIRME_PAGE_ADR);
+		else if(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER)
+			DWIN_changePage(DW_RECETE_PISIRME_PAGE_ADR);
+
+
+		if(registerTable[MANUEL_SURE_SONU_ADR] != 1)
 		{
+
 			pisirmeSonuAlarmFlag = 0;
 			pisirmeSonuAlarmBuzzer = 0;
 			setOut(BUZZER, 0);
+			setOut(K10, 0);
 		}
 		alarmBuzzerPeriod = 1000;
 
-		if(registerTable[SURE_SONU_ADR] == 1)
-			DWIN_changePage(SURE_SONU_ADR);
+		if(registerTable[MANUEL_SURE_SONU_ADR] == 1)
+		{
+			if(registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)
+				DWIN_changePage(MANUEL_SURE_SONU_ADR);
+			else if(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER)
+				DWIN_changePage(RECETE_SURE_SONU_ADR);
+		}
+
 
 		ustSicaklikProcess = 99;
 		altSicaklikProcess = 99;
@@ -2341,4 +2620,39 @@ void DWIN_buharHazirCheck(void)
 
 }
 
+void DWIN_writeRTC(uint8_t saniye, uint8_t dakika, uint8_t saat, uint8_t gun, uint8_t ay, uint8_t yil, uint8_t writeEN)
+{
+	uint16_t rtcEnable_msg = DW_WRITE_RTC_DONE_MSG;
+
+	uint16_t dk_sn 		= combineBytes(dakika, saniye);
+	uint16_t gun_saat 	= combineBytes(gun, saat);
+	uint16_t yil_ay		= combineBytes(yil, ay);
+
+	if(writeEN)
+	{
+		uint16_t writeBuffer[4] = {rtcEnable_msg, yil_ay, gun_saat, dk_sn};
+		DWIN_writeRegiser(writeBuffer, DW_FIRST_WRITE_RTC_ADR, sizeof(writeBuffer));
+	}
+	else
+	{
+		uint16_t writeBuffer[3] = {yil_ay, gun_saat, dk_sn};
+		DWIN_writeRegiser(writeBuffer, DW_FIRST_WRITE_RTC_ADR + 1, sizeof(writeBuffer));
+	}
+
+}
+
+void DWIN_readRTC(uint8_t* saniye, uint8_t* dakika, uint8_t* saat, uint8_t* hafta, uint8_t* gun, uint8_t* ay, uint8_t* yil)
+{
+	uint8_t readBuffer[8] = {0};
+
+	DWIN_readRegister(readBuffer, DW_FIRST_READ_RTC_ADR, sizeof(readBuffer));
+
+	*yil 	= readBuffer[0];
+	*ay	 	= readBuffer[1];
+	*gun 	= readBuffer[2];
+	*hafta	= readBuffer[3];
+	*saat 	= readBuffer[4];
+	*dakika = readBuffer[5];
+	*saniye = readBuffer[6];
+}
 

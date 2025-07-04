@@ -58,10 +58,11 @@
 #define I_BUHAR_HAZIR			GPIOC, GPIO_PIN_6
 
 
-
-
 #define LATCH_PIN GPIO_PIN_2
 #define LATCH_PORT GPIOD
+
+#define OE_PIN	GPIO_PIN_7
+#define OE_PORT GPIOA
 
 #define RUN_LED GPIOC, GPIO_PIN_13
 

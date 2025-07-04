@@ -129,6 +129,8 @@ int main(void)
   HAL_Delay(0);
   SEGGER_RTT_printf(0,"-------- SYSTEM START -------- \r\n");
 
+  HAL_GPIO_WritePin(OE_PORT, OE_PIN, 1);
+
 	  for(int i=0;i<6;i++)
 	  {
 		  HAL_Delay(30);
@@ -181,7 +183,7 @@ int main(void)
 
 	  if(TMP112_Init(&tmpSensor, &hi2c1) == HAL_OK)
 	  {
-		  // 10-bit çözünürlük ayarla
+		  // 12-bit çözünürlük ayarla
 		  TMP112_SetResolution(&tmpSensor, TMP112_RESOLUTION_12_BIT);
 
 		  // Shutdown modunu etkinleştir
@@ -198,10 +200,16 @@ int main(void)
 
 	  memset(registerTable,0,sizeof(registerTable));
 
-	  RTC_SetDateTime(15, 30, 0, 27, 1, 25);
+	  ///////////////////////////////////////////////////////////////////
+	  uint8_t saniye,dakika,saat,gun,hafta,ay,yil;
+	  DWIN_readRTC(&saniye, &dakika, &saat, &hafta, &gun, &ay, &yil);
+	  RTC_SetDateTime(saat, dakika, saniye, gun, ay, yil);
+	  ///////////////////////////////////////////////////////////////////
 
 	  if(EEPROM_init(&hi2c1) != EE_INIT_OK)
 		  SEGGER_RTT_printf(0,"EEPROM Init Error ! \r\n");
+
+	  HAL_RTCEx_SetSecond_IT(&hrtc);
 
 
 	  HAL_Delay(100);

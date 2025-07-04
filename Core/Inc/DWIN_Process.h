@@ -34,7 +34,6 @@ typedef struct{
 	uint32_t bluetoothCheck;
 	uint32_t dwinCheck;
     uint32_t run;
-    uint32_t pisirmeSuresi;
     uint32_t buharSuresi;
     uint32_t lambaSuresi;
     uint32_t pisirmeSonuAlarm;
@@ -77,5 +76,10 @@ void DWIN_manuelTurboProcess(void);
 void DWIN_arızaCheck(void);
 void DWIN_buharHazirCheck(void);
 void DWIN_receteSayfa(void);
+void DWIN_manuelPisirmeSuresi_Calc(void);
+void DWIN_manuelBuharSuresi_Calc(void);
+void DWIN_recetePisirmeAdimProcess(void);
+void DWIN_writeRTC(uint8_t saniye, uint8_t dakika, uint8_t saat, uint8_t gun, uint8_t ay, uint8_t yil, uint8_t writeEN);
+void DWIN_readRTC(uint8_t* saniye, uint8_t* dakika, uint8_t* saat, uint8_t* hafta, uint8_t* gun, uint8_t* ay, uint8_t* yil);
 
 #endif /* INC_DWIN_PROCESS_H_ */

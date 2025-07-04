@@ -313,10 +313,10 @@ EEPROM_initResponse EEPROM_Recete_DefaultWrite(I2C_HandleTypeDef *hi2c)
 	EEPROM_writeResponse check;
 
 	uint8_t defaultRecete_isim[DW_RECETE_ISIM_SIZE] 		= {'N','o',' ','N','a','m','e',0,0,0,0,0,0,0,0,0,0,0,0,0};
-	uint16_t defaultRecete_data[EE_RECETE_DATA_SIZE/2] 		= {	200, 200, 10, 20, 30, 60, 25,
-																200, 200, 10, 20, 30, 60, 25,
-																200, 200, 10, 20, 30, 60, 25,
-																200, 200, 10, 20, 30, 60, 25,
+	uint16_t defaultRecete_data[EE_RECETE_DATA_SIZE/2] 		= {	200, 200, 10, 20, 30, 5, 25,
+																200, 200, 10, 20, 30, 6, 25,
+																200, 200, 10, 20, 30, 7, 25,
+																200, 200, 10, 20, 30, 8, 25,
 																0, 	 3
 																};
 

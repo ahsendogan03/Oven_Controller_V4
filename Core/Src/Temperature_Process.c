@@ -213,7 +213,12 @@ void calculate_temperature(void)
 	else
 		temp.TC2 	= calculate_termocouple((avgAdcBuffer[TC2_ROW_BUFFER]*1000)/1013);
 
-	temp.TC3 		= calculate_termocouple(avgAdcBuffer[TC3_ROW_BUFFER]);
+	//temp.TC3 		= calculate_termocouple(avgAdcBuffer[TC3_ROW_BUFFER]);
+
+	if(avgAdcBuffer[TC3_ROW_BUFFER] < 550) // TC2 fazla ölçüyor
+		temp.TC3 	= calculate_termocouple((avgAdcBuffer[TC3_ROW_BUFFER]*1000)/1020);
+	else
+		temp.TC3 	= calculate_termocouple((avgAdcBuffer[TC3_ROW_BUFFER]*1000)/1013);
 
 
 	ustOnSicaklik 	= temp.TC1;
