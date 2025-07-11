@@ -100,6 +100,8 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
   /* USER CODE BEGIN HardFault_IRQn 0 */
+	SEGGER_RTT_printf(0,"HardFault HANDLER !!! \r\n");
+	HAL_Delay(0);
 	NVIC_SystemReset();
   /* USER CODE END HardFault_IRQn 0 */
   while (1)

@@ -34,6 +34,7 @@
 #define DW_RECETE_SAYFA_ENTER			2
 #define DW_RECETE_PISIRME_SAYFA_ENTER	3
 #define DW_RECETE_DUZEN_SAYFA_ENTER		4
+#define DW_OTOMATIK_ACMA_SAYFA_ENTER	5
 
 /*---------------------------- MANUEL SAYFASI ------------------------------*/
 
@@ -57,7 +58,7 @@
 #define DW_BUHAR_PUSKURTME_ADR			0x1018
 #define DW_LAMBA_ADR					0x1019
 #define DW_TURBO_ADR					0x101A
-#define DW_PISIRME_ALARM_SUSTURMA_ADR	0x101B
+#define DW_PISIRME_ALARM_SUSTURMA_ADR	0x108A
 
 /*------------------------------- ANIMSAYON ADDRESS  --------------------------------*/
 
@@ -141,10 +142,20 @@
 #define DW_RECETE_A4_ANIM_ADR			0x1088
 
 /*--------------------------------- TARIH/SAAT -----------------------------------*/
-
 #define DW_TARIH_SAAT_PAGE_ENTER_ADR	0x2500
 #define DW_FIRST_WRITE_RTC_ADR			0x009C
 #define DW_WRITE_RTC_DONE_MSG			0x5AA5
 #define DW_FIRST_READ_RTC_ADR			0x0010
+
+/*---------------------------------OTOMATIK ACMA -----------------------------------*/
+#define DW_OTOMATIK_ACMA_ENTER_ADR		0x2700
+#define DW_OTOMATIK_ACMA_ADR_LENGTH		59
+#define DW_OTOTMATIK_GUN_ENTER_ADR		0x1768
+#define DW_OTOTMATIK_GUN_EXIT_ADR		0x1778
+#define DW_OTOTMATIK_IKON_AKTIF_ADR		0x1779
+#define DW_OTOMATIK_ACMA_ILK_ADR		0x1584
+#define DW_OTOMATIK_ISIM_ILK_ADR		0x1589
+#define DW_OTOMATIK_PISIRME_INFO_ADR	0x1595
+#define DW_OTOMATIK_AKTIF_INFO_ADR		0x1597
 
 #endif /* INC_DWIN_ADRESS_H_ */

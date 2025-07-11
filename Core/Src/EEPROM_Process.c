@@ -223,12 +223,7 @@ EEPROM_initResponse EEPROM_init(I2C_HandleTypeDef *hi2c)
 //	EEPROM_Write(hi2c, EEPROM_USAGE_CHECK_ADDR, &eraseWrite, 1);
 //	HAL_Delay(0);
 
-//	uint8_t eraseWrite = 0;
-//	EEPROM_Write(hi2c, TEMP_LOG_CHECK_ADR, &eraseWrite, 1);
-//	HAL_Delay(0);
-
 	EEPROM_Read(hi2c, EEPROM_USAGE_CHECK_ADDR, &usageCheck, sizeof(usageCheck));
-
 
 
 	if(usageCheck == EEPROM_USAGE_CHECK_VAL)
@@ -245,6 +240,7 @@ EEPROM_initResponse EEPROM_init(I2C_HandleTypeDef *hi2c)
 		}
 
 		EEPROM_Recete_Read(hi2c);
+		EEPROM_OtomatikAcma_Read(hi2c);
 
 		registerTable[DW_PISIRME_SURESI_ORT_ADR] 	= registerTable[DW_PISIRME_SURESI_ADR];
 		registerTable[DW_BUHAR_SURESI_ORT_ADR] 		= registerTable[DW_BUHAR_SURESI_ADR];
@@ -297,9 +293,17 @@ EEPROM_initResponse EEPROM_init(I2C_HandleTypeDef *hi2c)
 		HAL_Delay(0);
 
 		if(response == EE_INIT_OK)
+			response = EEPROM_OtomatikAcma_DefaultWrite(hi2c);
+
+		HAL_Delay(0);
+
+		if(response == EE_INIT_OK)
 			EEPROM_Recete_Read(hi2c);
 
+		HAL_Delay(0);
 
+		if(response == EE_INIT_OK)
+			EEPROM_OtomatikAcma_Read(hi2c);
 
 
 	}
@@ -378,4 +382,129 @@ void EEPROM_Recete_Read(I2C_HandleTypeDef *hi2c)
 
 		DWIN_writeRegiser(&recete_resim_data_16, DW_RECETE_RESIM_ILK_ADR + i, sizeof(recete_resim_data_16));
 	}
+}
+
+EEPROM_initResponse EEPROM_OtomatikAcma_DefaultWrite(I2C_HandleTypeDef *hi2c)
+{
+	EEPROM_initResponse response = EE_INIT_OK;
+
+	EEPROM_writeResponse check;
+
+	uint8_t defaultOtomatik_isim[DW_RECETE_ISIM_SIZE] 				= {'N','o',' ','N','a','m','e',0,0,0,0,0,0,0,0,0,0,0,0,0};
+	uint16_t defaultOtomatik_param[EE_OTOMATIK_ACMA_PARAM_SIZE/2] 	= {6,30,200,200,1,1,0}; // Saat, dakika, ust, alt, buhar, manuel/recete, aktif
+	uint8_t defaultOtomatik_param_u8[EE_OTOMATIK_ACMA_PARAM_SIZE]	= {0};
+
+	uint8_t defaultOtomatik_data[EE_OTOMATIK_ACMA_PARAM_SIZE + DW_RECETE_ISIM_SIZE]	= {0};
+
+	convert_u16_to_u8(defaultOtomatik_param, defaultOtomatik_param_u8, sizeof(defaultOtomatik_param_u8));
+
+	for(int i=0;i<sizeof(defaultOtomatik_data);i++)
+	{
+		if(i<EE_OTOMATIK_ACMA_PARAM_SIZE)
+			defaultOtomatik_data[i] = defaultOtomatik_param_u8[i];
+		else
+			defaultOtomatik_data[i] = defaultOtomatik_isim[i-EE_OTOMATIK_ACMA_PARAM_SIZE];
+	}
+
+	uint8_t defaultOtomatik_allData[sizeof(defaultOtomatik_data) * 7] = {0};
+
+	for(int i=0;i<7;i++)
+	{
+		for(int j=0;j<sizeof(defaultOtomatik_data);j++)
+			defaultOtomatik_allData[j + (i*sizeof(defaultOtomatik_data))] = defaultOtomatik_data[j];
+	}
+
+	check = EEPROM_Write(hi2c, EE_OTOMATIK_ACMA_ILK_ADR, defaultOtomatik_allData, sizeof(defaultOtomatik_allData));
+
+	if(check != EE_WRITE_OK)
+		response = EE_INIT_ERROR;
+
+	return response;
+
+}
+
+void EEPROM_OtomatikAcma_Read(I2C_HandleTypeDef *hi2c)
+{
+	uint8_t defaultOtomatik_allData[(EE_OTOMATIK_ACMA_PARAM_SIZE + DW_RECETE_ISIM_SIZE) * 7] = {0};
+	EEPROM_Read_Safe(hi2c, EE_OTOMATIK_ACMA_ILK_ADR, defaultOtomatik_allData, sizeof(defaultOtomatik_allData));
+
+	uint8_t defaultOtomatik_param_u8[EE_OTOMATIK_ACMA_PARAM_SIZE]		= {0};
+	uint8_t defaultOtomatik_isim[DW_RECETE_ISIM_SIZE]					= {0};
+
+	uint16_t defaultOtomatik_param_u16[EE_OTOMATIK_ACMA_PARAM_SIZE/2]	= {0};
+	uint16_t defaultOtomatik_isim_u16[DW_RECETE_ISIM_SIZE/2]			= {0};
+
+	for(int i=0;i<7;i++)
+	{
+		for(int j=0;j<EE_OTOMATIK_ACMA_PARAM_SIZE + DW_RECETE_ISIM_SIZE;j++)
+		{
+			if(j<EE_OTOMATIK_ACMA_PARAM_SIZE)
+				defaultOtomatik_param_u8[j] = defaultOtomatik_allData[j+(i*(EE_OTOMATIK_ACMA_PARAM_SIZE + DW_RECETE_ISIM_SIZE))];
+			else
+				defaultOtomatik_isim[j-EE_OTOMATIK_ACMA_PARAM_SIZE] = defaultOtomatik_allData[j+(i*(EE_OTOMATIK_ACMA_PARAM_SIZE + DW_RECETE_ISIM_SIZE))];
+		}
+
+		convert_u8_to_u16(defaultOtomatik_param_u8, defaultOtomatik_param_u16, sizeof(defaultOtomatik_param_u8));
+		convert_u8_to_u16(defaultOtomatik_isim, defaultOtomatik_isim_u16, sizeof(defaultOtomatik_isim));
+
+		for(int k=0;k<(EE_OTOMATIK_ACMA_PARAM_SIZE/2)-2;k++)
+			registerTable[(DW_OTOMATIK_ACMA_ILK_ADR + k) + (i*DW_OTOMATIK_ACMA_ADR_LENGTH)] =  defaultOtomatik_param_u16[k];
+
+		registerTable[DW_OTOMATIK_PISIRME_INFO_ADR + (i*DW_OTOMATIK_ACMA_ADR_LENGTH)] 	= defaultOtomatik_param_u16[(EE_OTOMATIK_ACMA_PARAM_SIZE/2)-2];
+		registerTable[DW_OTOMATIK_AKTIF_INFO_ADR + (i*DW_OTOMATIK_ACMA_ADR_LENGTH)] 	= defaultOtomatik_param_u16[(EE_OTOMATIK_ACMA_PARAM_SIZE/2)-1];
+
+		for(int k=0;k<DW_RECETE_ISIM_SIZE/2;k++)
+			registerTable[(DW_OTOMATIK_ISIM_ILK_ADR + k) + (i*DW_OTOMATIK_ACMA_ADR_LENGTH)] = defaultOtomatik_isim_u16[k];
+
+
+		uint16_t writeData[((EE_OTOMATIK_ACMA_PARAM_SIZE/2)-2) + (DW_RECETE_ISIM_SIZE / 2)] = {0};
+
+		for(int k=0;k<sizeof(writeData)/2;k++)
+		{
+			if(k<((EE_OTOMATIK_ACMA_PARAM_SIZE/2)-2))
+				writeData[k] = defaultOtomatik_param_u16[k];
+			else
+				writeData[k] = defaultOtomatik_isim_u16[k - ((EE_OTOMATIK_ACMA_PARAM_SIZE/2)-2)];
+		}
+
+		DWIN_writeRegiser(writeData, DW_OTOMATIK_ACMA_ILK_ADR + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(writeData));
+
+		if(defaultOtomatik_param_u16[(EE_OTOMATIK_ACMA_PARAM_SIZE/2)-2] == 1)
+		{
+			uint16_t oto_write = 0x0101;
+			DWIN_writeRegiser(&oto_write, 0x15A2 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
+
+			oto_write = 0x1812;
+			DWIN_writeRegiser(&oto_write, 0x15A9 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
+			DWIN_writeRegiser(&oto_write, 0x15B6 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
+
+			oto_write = 0x0035;
+			DWIN_writeRegiser(&oto_write, 0x1595 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
+		}
+		else if(defaultOtomatik_param_u16[(EE_OTOMATIK_ACMA_PARAM_SIZE/2)-2] == 2)
+		{
+			uint16_t oto_write = 0x162C;
+			DWIN_writeRegiser(&oto_write, 0x15A2 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
+
+			oto_write = 0x0101;
+			DWIN_writeRegiser(&oto_write, 0x15A9 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
+			DWIN_writeRegiser(&oto_write, 0x15B6 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
+
+			oto_write = 0x003A;
+			DWIN_writeRegiser(&oto_write, 0x1595 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
+		}
+		if(defaultOtomatik_param_u16[(EE_OTOMATIK_ACMA_PARAM_SIZE/2)-1] == 0)
+		{
+			uint16_t oto_write = 0x003D;
+			DWIN_writeRegiser(&oto_write, 0x1597 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
+		}
+		else
+		{
+			uint16_t oto_write = 0x003E;
+			DWIN_writeRegiser(&oto_write, 0x1597 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
+		}
+
+
+	}
+
 }

@@ -12,7 +12,7 @@
 #include "usart.h"
 
 
-#define DWIN_rxBufferSize 	50
+#define DWIN_rxBufferSize 	100
 #define ESP32_rxBufferSize 	50
 
 typedef struct{
