@@ -25,12 +25,12 @@
 #define K12 	0x2000
 #define K13 	0x4000
 #define K18 	0x8000
-#define K1 		0//0x20000
+#define K1 		0x20000//
 #define K2 		0x40000
-#define K3 		0//0x80000
+#define K3 		0x80000//
 #define K4 		0x100000
-#define K5 		0//0x200000
-#define K6 		0//0x400000
+#define K5 		0x200000//
+#define K6 		0x400000//
 #define K7 		0x800000
 
 #define Q_MAYALAMA_KAZAN_ISITICISI 	K1

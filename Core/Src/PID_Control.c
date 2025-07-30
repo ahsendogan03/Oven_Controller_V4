@@ -40,7 +40,7 @@ double PIDOut_Alt, TempSetpoint_Alt;
 extern uint16_t registerTable[9000];
 
 double KP_ustArka = 0.3;
-double KI_ustArka = 0.008;
+double KI_ustArka = 0.005;
 double KD_ustArka = 0.0;
 
 double KP_ustOn = 0.3;

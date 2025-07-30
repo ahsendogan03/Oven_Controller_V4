@@ -83,6 +83,19 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 extern uint16_t registerTable[9000];
+uint16_t motor_check = 0;
+uint16_t motor_counter = 0;
+uint16_t motor_check2 = 0;
+uint16_t motor_counter2 = 0;
+
+void delay_funct(uint16_t dly)
+{
+	for(int i=0;i<dly;i++)
+	{
+		shiftRefresh();
+		HAL_Delay(0);
+	}
+}
 /* USER CODE END 0 */
 
 /**
@@ -141,7 +154,6 @@ int main(void)
 		  HAL_GPIO_TogglePin(RUN_LED);
 	  }
 
-
 	  if(adc_Init() != HAL_OK)
 	  {
 		  SEGGER_RTT_printf(0,"ADC Error \r\n");
@@ -166,21 +178,6 @@ int main(void)
 		  Error_Handler();
 	  }
 
-	//  sht4x_Init(&hi2c1);
-	//  sht4x_setMode(SHT4x_NOHEAT_LOWPRECISION);
-
-//	  if (HDC1080_Init(&hdcSensor, &hi2c1,
-//	                   HDC1080_RESOLUTION_TEMP_14BIT,
-//	                   HDC1080_RESOLUTION_HUM_14BIT) == HAL_OK)
-//	  {
-//		  SEGGER_RTT_printf(0,"HDC1080 Init OK ! \r\n");
-//	  }
-
-//	  else
-//	  {
-//		  SEGGER_RTT_printf(0,"HDC1080 Init ERROR ! \r\n");
-//	  }
-
 	  if(TMP112_Init(&tmpSensor, &hi2c1) == HAL_OK)
 	  {
 		  // 12-bit çözünürlük ayarla
@@ -200,19 +197,19 @@ int main(void)
 
 	  memset(registerTable,0,sizeof(registerTable));
 
+	  if(EEPROM_init(&hi2c1) != EE_INIT_OK)
+		  SEGGER_RTT_printf(0,"EEPROM Init Error ! \r\n");
+
+	  HAL_Delay(2000);
+
 	  ///////////////////////////////////////////////////////////////////
 	  uint8_t saniye,dakika,saat,gun,hafta,ay,yil;
 	  DWIN_readRTC(&saniye, &dakika, &saat, &hafta, &gun, &ay, &yil);
 	  RTC_SetDateTime(saat, dakika, saniye, gun, ay, yil);
 	  ///////////////////////////////////////////////////////////////////
 
-	  if(EEPROM_init(&hi2c1) != EE_INIT_OK)
-		  SEGGER_RTT_printf(0,"EEPROM Init Error ! \r\n");
 
 	  HAL_RTCEx_SetSecond_IT(&hrtc);
-
-
-	  HAL_Delay(100);
 
 
   /* USER CODE END 2 */

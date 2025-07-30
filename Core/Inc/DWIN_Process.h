@@ -82,5 +82,7 @@ void DWIN_recetePisirmeAdimProcess(void);
 void DWIN_writeRTC(uint8_t saniye, uint8_t dakika, uint8_t saat, uint8_t gun, uint8_t ay, uint8_t yil, uint8_t writeEN);
 void DWIN_readRTC(uint8_t* saniye, uint8_t* dakika, uint8_t* saat, uint8_t* hafta, uint8_t* gun, uint8_t* ay, uint8_t* yil);
 void DWIN_otomatikSayfa(void);
+void DWIN_otomatikAcmaCheck(void);
+void DWIN_otomatikPisirmeBaslatmaCheck(void);
 
 #endif /* INC_DWIN_PROCESS_H_ */

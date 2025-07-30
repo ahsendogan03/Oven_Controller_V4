@@ -114,7 +114,8 @@ void RTC_SetDateTime(uint8_t hour, uint8_t minute, uint8_t second, uint8_t day, 
 }
 
 
-void RTC_GetDateTime(void) {
+void RTC_GetDateTime(RTC_TimeTypeDef *Time, RTC_DateTypeDef	*Date)
+{
 
     RTC_TimeTypeDef sTime = {0};
     RTC_DateTypeDef sDate = {0};
@@ -126,8 +127,17 @@ void RTC_GetDateTime(void) {
     // Tarih bilgisi oku
     HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
 
-    SEGGER_RTT_printf(0,"Saat: %02d:%02d:%02d\n", sTime.Hours, sTime.Minutes, sTime.Seconds);
-    SEGGER_RTT_printf(0,"Tarih: %02d/%02d/20%02d  gun:%d\n", sDate.Date, sDate.Month, sDate.Year,sDate.WeekDay);
+    Time->Hours 	= sTime.Hours;
+    Time->Minutes 	= sTime.Minutes;
+    Time->Seconds	= sTime.Seconds;
+
+    Date->Date		= sDate.Date;
+    Date->Month		= sDate.Month;
+    Date->WeekDay	= sDate.WeekDay;
+    Date->Year		= sDate.Year;
+
+//    SEGGER_RTT_printf(0,"Saat: %02d:%02d:%02d\n", sTime.Hours, sTime.Minutes, sTime.Seconds);
+//    SEGGER_RTT_printf(0,"Tarih: %02d/%02d/20%02d  gun:%d\n", sDate.Date, sDate.Month, sDate.Year,sDate.WeekDay);
 
 }
 /* USER CODE END 0 */

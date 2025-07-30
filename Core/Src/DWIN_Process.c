@@ -66,6 +66,8 @@ uint16_t islemdekiReceteAdim 		= 1;
 uint16_t islemdekiOtomatikGun		= 0;
 uint16_t islemdekiOtomatikAktifIkon	= 0;
 
+uint8_t otomatikPisirmeBaslatmaFlag = 0;
+
 
 // 8 bitlik iki sayıyı 16 bitlik bir sayıya birleştiren fonksiyon
 uint16_t combineBytes(uint8_t highByte, uint8_t lowByte) {
@@ -116,6 +118,7 @@ void HAL_RTCEx_RTCEventCallback(RTC_HandleTypeDef *hrtc)
 {
 	DWIN_manuelPisirmeSuresi_Calc();
 	DWIN_manuelBuharSuresi_Calc();
+	DWIN_otomatikAcmaCheck();
 }
 
 
@@ -732,7 +735,6 @@ void DWIN_run(void)
 					PID_Run();
 
 
-
 			}
 
 		}
@@ -745,23 +747,6 @@ void DWIN_run(void)
 		pwmOutProcess();
 	}
 
-	#if DEBUG_DWIN == 1
-	if(wrongmsg_flag == 1)
-	{
-		SEGGER_RTT_printf(0,"wrong msg : ");
-
-		for(int i=0;i<20;i++)
-		{
-			HAL_Delay(0);
-			SEGGER_RTT_printf(0," %x ",wrongmsg_buffer[i]);
-		}
-
-		SEGGER_RTT_printf(0,"\r\n");
-
-		wrongmsg_flag = 0;
-		memset(wrongmsg_buffer,0,sizeof(wrongmsg_buffer));
-	}
-	#endif
 
 	DWIN_check();
 	DWIN_answerProcess();
@@ -771,6 +756,7 @@ void DWIN_run(void)
 	DWIN_lambaSuresi();
 	DWIN_manuelPeriodProcess();
 	DWIN_buharHazirCheck();
+	DWIN_otomatikPisirmeBaslatmaCheck();
 }
 void DWIN_manuelPeriodProcess(void)
 {
@@ -1278,6 +1264,9 @@ void DWIN_check(void)
 				changeMaxSetValue(registerTable[DW_ISITICI_PERIOD_ADR]);
 
 				DWIN_resetManuelPisirme();
+
+				uint16_t writeData = 0;
+				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
 
 				DWIN.Init = 1;
 			}
@@ -2242,8 +2231,9 @@ void DWIN_otomatikSayfa(void)
 
 				// otomatik parametreler okunup eeprom ve registerTable yazılacak
 
-				if(data != 0)
+				if((data == 1)||(data == 2))
 				{
+//
 					uint8_t readData[EE_OTOMATIK_ACMA_PARAM_SIZE - 4 + DW_RECETE_ISIM_SIZE];
 					DWIN_readRegister(readData, DW_OTOTMATIK_GUN_ENTER_ADR, sizeof(readData));
 
@@ -2282,38 +2272,48 @@ void DWIN_otomatikSayfa(void)
 						registerTable[DW_OTOMATIK_ACMA_ILK_ADR + ((islemdekiOtomatikGun-1) * DW_OTOMATIK_ACMA_ADR_LENGTH) + i] = writeData[i];
 
 
-					registerTable[DW_OTOTMATIK_GUN_EXIT_ADR] = data; // manuel/recete bilgisi
+					registerTable[DW_OTOMATIK_PISIRME_INFO_ADR + ((islemdekiOtomatikGun-1)*DW_OTOMATIK_ACMA_ADR_LENGTH)] = data; // manuel/recete bilgisi
 
 					uint16_t Otomatik_param[EE_OTOMATIK_ACMA_PARAM_SIZE/2] = {0};
 
-					for(int i=0;i<sizeof(Otomatik_param) - 2;i++)
+					for(int i=0;i<(sizeof(Otomatik_param)/2) - 2;i++)
 						Otomatik_param[i] = writeData[i];
 
-					Otomatik_param[(EE_OTOMATIK_ACMA_PARAM_SIZE/2) - 2] = registerTable[DW_OTOTMATIK_GUN_EXIT_ADR]; // manuel/recete bilgisi
-					Otomatik_param[(EE_OTOMATIK_ACMA_PARAM_SIZE/2) - 1] = registerTable[DW_OTOMATIK_AKTIF_INFO_ADR];
+					Otomatik_param[(EE_OTOMATIK_ACMA_PARAM_SIZE/2) - 3] = registerTable[DW_OTOMATIK_PISIRME_INFO_ADR + ((islemdekiOtomatikGun-1)*DW_OTOMATIK_ACMA_ADR_LENGTH)]; // manuel/recete bilgisi
+					Otomatik_param[(EE_OTOMATIK_ACMA_PARAM_SIZE/2) - 2] = registerTable[DW_OTOMATIK_AKTIF_INFO_ADR + ((islemdekiOtomatikGun-1)*DW_OTOMATIK_ACMA_ADR_LENGTH)];
 
-					uint16_t Otomatik_isim[DW_RECETE_ISIM_SIZE/2] = {0};
+					uint8_t isim_row_data[2];
+					uint16_t isim_row_data_u16;
 
-					for(int i=0;i<DW_RECETE_ISIM_SIZE/2;i++)
-						Otomatik_isim[i] = writeData[i+((sizeof(writeData)/2) - (DW_RECETE_ISIM_SIZE/2))];
+					DWIN_readRegister(isim_row_data, DW_OTOMATIK_ACMA_ISIM_CHOOSE, sizeof(isim_row_data));
 
-					uint16_t OtomatikAllData_u16[(EE_OTOMATIK_ACMA_PARAM_SIZE + DW_RECETE_ISIM_SIZE)/2] = {0};
-					uint8_t OtomatikAllData_u8[EE_OTOMATIK_ACMA_PARAM_SIZE + DW_RECETE_ISIM_SIZE] 		= {0};
+					isim_row_data_u16 = combineBytes(isim_row_data[0], isim_row_data[1]);
 
-					for(int i=0;i<(sizeof(OtomatikAllData_u16))/2;i++)
-					{
-						if(i < sizeof(Otomatik_param)/2)
-							OtomatikAllData_u16[i] = Otomatik_param[i];
-						else
-							OtomatikAllData_u16[i] = Otomatik_isim[i-(sizeof(Otomatik_param)/2)];
-					}
+					Otomatik_param[(EE_OTOMATIK_ACMA_PARAM_SIZE/2) - 1] = isim_row_data_u16 - 1;
 
-					convert_u16_to_u8(OtomatikAllData_u16, OtomatikAllData_u8, sizeof(OtomatikAllData_u16));
+					uint8_t Otomatik_param_u8[sizeof(Otomatik_param)];
 
-					EEPROM_Write(&hi2c1, EE_OTOMATIK_ACMA_ILK_ADR + ((islemdekiOtomatikGun-1)*(EE_OTOMATIK_ACMA_PARAM_SIZE + DW_RECETE_ISIM_SIZE)), OtomatikAllData_u8, sizeof(OtomatikAllData_u8));
+					convert_u16_to_u8(Otomatik_param, Otomatik_param_u8, sizeof(Otomatik_param));
+
+					EEPROM_Write(&hi2c1, EE_OTOMATIK_ACMA_ILK_ADR + ((islemdekiOtomatikGun-1)*(EE_OTOMATIK_ACMA_PARAM_SIZE)), Otomatik_param_u8, sizeof(Otomatik_param_u8));
+
+					islemdekiOtomatikGun = 0;
 				}
 
-				islemdekiOtomatikGun = 0;
+
+
+			break;
+
+			case DW_OTOMATIK_ACMA_ISIM_CHOOSE:
+
+				uint8_t recete_isim_data_u8[DW_RECETE_ISIM_SIZE];
+				EEPROM_Read_Safe(&hi2c1, EE_RECETE_ILK_ADR + EE_RECETE_ISIM_ROW +((data-1)*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), recete_isim_data_u8, sizeof(recete_isim_data_u8));
+
+				uint16_t recete_isim_data_u16[DW_RECETE_ISIM_SIZE/2];
+
+				convert_u8_to_u16(recete_isim_data_u8, recete_isim_data_u16, sizeof(recete_isim_data_u8));
+
+				DWIN_writeRegiser(recete_isim_data_u16, DW_OTOMATIK_ISIM_ROW_ADR, sizeof(recete_isim_data_u16));
 
 			break;
 
@@ -2321,10 +2321,29 @@ void DWIN_otomatikSayfa(void)
 
 				if(data == 1)
 				{
+
+					uint8_t saatIkonCheck = 0;
+
+					for(int i=0;i<7;i++)
+					{
+						if(registerTable[0x1597 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH)] == 1)
+						{
+							saatIkonCheck = 1;
+							break;
+						}
+					}
+
+					if(saatIkonCheck == 0)
+					{
+						uint16_t ikonWrite = 1;
+						DWIN_writeRegiser(&ikonWrite, DW_SAAT_IKON_ADDR, sizeof(ikonWrite));
+						registerTable[DW_SAAT_IKON_ADDR] = 1;
+					}
+
 					uint16_t oto_write = 0x003E;
 					DWIN_writeRegiser(&oto_write, 0x1597 + (islemdekiOtomatikAktifIkon*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
 
-					registerTable[islemdekiOtomatikAktifIkon*DW_OTOMATIK_ACMA_ADR_LENGTH] = 1;
+					registerTable[0x1597 + (islemdekiOtomatikAktifIkon*DW_OTOMATIK_ACMA_ADR_LENGTH)] = 1;
 
 					uint8_t writeData = 1;
 
@@ -2332,17 +2351,34 @@ void DWIN_otomatikSayfa(void)
 
 				}
 
-				else if(data == 2)
+				else if(data == 0)
 				{
 					uint16_t oto_write = 0x003D;
 					DWIN_writeRegiser(&oto_write, 0x1597 + (islemdekiOtomatikAktifIkon*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
 
-					registerTable[islemdekiOtomatikAktifIkon*DW_OTOMATIK_ACMA_ADR_LENGTH] = 0;
+					registerTable[0x1597 + (islemdekiOtomatikAktifIkon*DW_OTOMATIK_ACMA_ADR_LENGTH)] = 0;
 
 					uint8_t writeData = 0;
 
 					EEPROM_Write(&hi2c1, EE_OTOMATIK_ACMA_ILK_ADR + 13 + (islemdekiOtomatikAktifIkon*(EE_OTOMATIK_ACMA_PARAM_SIZE + DW_RECETE_ISIM_SIZE)), &writeData, sizeof(writeData));
 
+					uint8_t saatIkonCheck = 0;
+
+					for(int i=0;i<7;i++)
+					{
+						if(registerTable[0x1597 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH)] == 1)
+						{
+							saatIkonCheck = 1;
+							break;
+						}
+					}
+
+					if(saatIkonCheck == 0)
+					{
+						uint16_t ikonWrite = 0;
+						DWIN_writeRegiser(&ikonWrite, DW_SAAT_IKON_ADDR, sizeof(ikonWrite));
+						registerTable[DW_SAAT_IKON_ADDR] = 0;
+					}
 
 				}
 
@@ -2353,6 +2389,149 @@ void DWIN_otomatikSayfa(void)
 		}
 	}
 
+}
+
+void DWIN_otomatikAcmaCheck(void)
+{
+	if((registerTable[DW_SAAT_IKON_ADDR] == 1)&&(registerTable[REG_DW_MODE_INFO_ADR] == DW_ANA_SAYFA_ENTER))
+	{
+	    RTC_TimeTypeDef sTime = {0};
+	    RTC_DateTypeDef sDate = {0};
+
+	    RTC_GetDateTime(&sTime, &sDate);
+
+		for(int i=0;i<7;i++)
+		{
+			if(registerTable[DW_OTOMATIK_AKTIF_INFO_ADR + (i*DW_OTOMATIK_ACMA_ADR_LENGTH)] == 1)
+			{
+
+			    if((sDate.WeekDay - 1) == i)
+			    {
+			    	if(	(registerTable[DW_OTOMATIK_ACMA_SAAT_ADR + (i*DW_OTOMATIK_ACMA_ADR_LENGTH)] == sTime.Hours) &&
+			    		(registerTable[DW_OTOMATIK_ACMA_MIN_ADR + (i*DW_OTOMATIK_ACMA_ADR_LENGTH)] == sTime.Minutes)&&
+						sTime.Seconds == 0)
+			    	{
+
+			    		otomatikPisirmeBaslatmaFlag = sDate.WeekDay;
+//			    	    SEGGER_RTT_printf(0,"Saat: %02d:%02d:%02d\n", sTime.Hours, sTime.Minutes, sTime.Seconds);
+//			    	    SEGGER_RTT_printf(0,"Tarih: %02d/%02d/20%02d  gun:%d\n", sDate.Date, sDate.Month, sDate.Year,sDate.WeekDay);
+			    	}
+			    }
+
+			}
+		}
+	}
+}
+
+void DWIN_otomatikPisirmeBaslatmaCheck(void)
+{
+	if(otomatikPisirmeBaslatmaFlag > 0)
+	{
+		uint8_t eeprom_row = otomatikPisirmeBaslatmaFlag - 1;
+		uint16_t otomatikPisirmeInfo 	= registerTable[DW_OTOMATIK_PISIRME_INFO_ADR + (eeprom_row*DW_OTOMATIK_ACMA_ADR_LENGTH)];
+		uint16_t otomatikPisirmeBuhar 	= registerTable[DW_OTOMATIK_BUHAR_ADR + (eeprom_row*DW_OTOMATIK_ACMA_ADR_LENGTH)];
+
+		switch(otomatikPisirmeInfo)
+		{
+			case DW_OTOMATIK_MANUEL_PISIRME:
+
+				uint8_t ustSicaklik_u8[2];
+				uint16_t ustSicaklik_u16 = registerTable[DW_OTOMATIK_UST_SICAKLIK_ADR + (eeprom_row*DW_OTOMATIK_ACMA_ADR_LENGTH)];
+
+				uint8_t altSicaklik_u8[2];
+				uint16_t altSicaklik_u16 = registerTable[DW_OTOMATIK_ALT_SICAKLIK_ADR + (eeprom_row*DW_OTOMATIK_ACMA_ADR_LENGTH)];
+
+
+				registerTable[REG_DW_MODE_INFO_ADR] = DW_MANUEL_MODE_ENTER;
+
+				registerTable[DW_UST_SICAKLIK_SET_ADR] = ustSicaklik_u16;
+				registerTable[DW_ALT_SICAKLIK_SET_ADR] = altSicaklik_u16;
+
+				parse16BitTo8Bit(ustSicaklik_u16, &ustSicaklik_u8[0], &ustSicaklik_u8[1]);
+				parse16BitTo8Bit(altSicaklik_u16, &altSicaklik_u8[0], &altSicaklik_u8[1]);
+
+				setOut(K14, 1);
+				//DWIN_enterManuelProcess();
+				PID_Setup();
+
+
+				DWIN_writeRegiser(&ustSicaklik_u16, DW_UST_SICAKLIK_SET_ADR, sizeof(ustSicaklik_u16));
+				DWIN_writeRegiser(&altSicaklik_u16, DW_ALT_SICAKLIK_SET_ADR, sizeof(altSicaklik_u16));
+
+				DWIN_changePage(DW_PISIRME_PAGE_ADR);
+
+				EEPROM_Write(&hi2c1, DW_UST_SICAKLIK_SET_ADR, ustSicaklik_u8, sizeof(ustSicaklik_u8));
+				EEPROM_Write(&hi2c1, DW_ALT_SICAKLIK_SET_ADR, altSicaklik_u8, sizeof(altSicaklik_u8));
+
+				if(otomatikPisirmeBuhar == 1)
+				{
+					uint16_t buharData = 1;
+					setOut(K8, 1);
+					registerTable[DW_BUHAR_HAZIR_ANIM] = buharData;
+					registerTable[DW_BUHAR_HAZIRLAMA_ADR] = buharData;
+
+					DWIN_writeRegiser(&buharData, DW_BUHAR_HAZIR_ANIM, sizeof(buharData));
+					DWIN_writeRegiser(&buharData, DW_BUHAR_HAZIRLAMA_ADR, sizeof(buharData));
+				}
+
+
+			break;
+
+			case DW_OTOMATIK_RECETE_PISIRME:
+
+				if(otomatikPisirmeBuhar == 1)
+				{
+					uint16_t buharData = 1;
+					setOut(K8, 1);
+					registerTable[DW_BUHAR_HAZIR_ANIM] = buharData;
+					registerTable[DW_BUHAR_HAZIRLAMA_ADR] = buharData;
+
+					DWIN_writeRegiser(&buharData, DW_BUHAR_HAZIR_ANIM, sizeof(buharData));
+					DWIN_writeRegiser(&buharData, DW_BUHAR_HAZIRLAMA_ADR, sizeof(buharData));
+				}
+
+				uint8_t fakeRxBuffer[11] = {0};
+
+				fakeRxBuffer[0] = 0x5A;
+				fakeRxBuffer[1] = 0xA5;
+				fakeRxBuffer[2] = 0x08;
+				fakeRxBuffer[3] = 0x83;
+
+				uint8_t readData[2];
+				EEPROM_Read(&hi2c1, EE_OTOMATIK_RECETE_ROW_ADR + (eeprom_row * EE_OTOMATIK_ACMA_PARAM_SIZE), readData, sizeof(readData));
+
+				uint16_t recete_num = DW_RECETE_ILK_ADR + combineBytes(readData[0], readData[1]);
+				parse16BitTo8Bit(recete_num, &fakeRxBuffer[4], &fakeRxBuffer[5]);
+
+				fakeRxBuffer[6] = 0x01;
+				fakeRxBuffer[7] = 0x00;
+				fakeRxBuffer[8] = 0x01;
+
+				uint8_t crcBuffer[6];
+
+				for(int i=3;i<9;i++)
+					crcBuffer[i-3] = fakeRxBuffer[i];
+
+				uint16_t crc = calculateCRC16Modbus(crcBuffer, sizeof(crcBuffer));
+
+				fakeRxBuffer[9] = crc & 0xFF;
+				fakeRxBuffer[10] = (crc >> 8) & 0xFF;
+
+				for(int i=0;i<11;i++)
+					DWIN_rxBuffer[i] = fakeRxBuffer[i];
+
+				registerTable[REG_DW_MODE_INFO_ADR] = DW_RECETE_SAYFA_ENTER;
+
+				DWIN.rxDoneFlag = 1;
+
+			break;
+
+		}
+
+
+
+		otomatikPisirmeBaslatmaFlag = 0;
+	}
 }
 
 void DWIN_recetePisirmeAdimProcess(void)

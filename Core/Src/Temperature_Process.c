@@ -208,17 +208,17 @@ void calculate_temperature(void)
 	//temp.MCP9700 	= calculate_mcp9700(avgAdcBuffer[MCP9700_ROW_BUFFER]);
 	temp.TC1 		= calculate_termocouple(avgAdcBuffer[TC1_ROW_BUFFER]);
 
-	if(avgAdcBuffer[TC2_ROW_BUFFER] < 550) // TC2 fazla ölçüyor
-		temp.TC2 	= calculate_termocouple((avgAdcBuffer[TC2_ROW_BUFFER]*1000)/1020);
-	else
-		temp.TC2 	= calculate_termocouple((avgAdcBuffer[TC2_ROW_BUFFER]*1000)/1013);
+//	if(avgAdcBuffer[TC2_ROW_BUFFER] < 550) // TC2 fazla ölçüyor
+		temp.TC2 	= calculate_termocouple((avgAdcBuffer[TC2_ROW_BUFFER]*1000)/992);
+//	else
+//		temp.TC2 	= calculate_termocouple((avgAdcBuffer[TC2_ROW_BUFFER]*1000)/1013);
 
-	//temp.TC3 		= calculate_termocouple(avgAdcBuffer[TC3_ROW_BUFFER]);
-
-	if(avgAdcBuffer[TC3_ROW_BUFFER] < 550) // TC2 fazla ölçüyor
-		temp.TC3 	= calculate_termocouple((avgAdcBuffer[TC3_ROW_BUFFER]*1000)/995);
-	else
-		temp.TC3 	= calculate_termocouple(avgAdcBuffer[TC3_ROW_BUFFER]);
+//	temp.TC2 		= calculate_termocouple(avgAdcBuffer[TC2_ROW_BUFFER]);
+	temp.TC3 		= calculate_termocouple(avgAdcBuffer[TC3_ROW_BUFFER]);
+//	if(avgAdcBuffer[TC3_ROW_BUFFER] < 550) // TC2 fazla ölçüyor
+//		temp.TC3 	= calculate_termocouple((avgAdcBuffer[TC3_ROW_BUFFER]*1000)/995);
+//	else
+//		temp.TC3 	= calculate_termocouple(avgAdcBuffer[TC3_ROW_BUFFER]);
 
 //	if(avgAdcBuffer[TC3_ROW_BUFFER] < 550) // TC2 fazla ölçüyor
 //		temp.TC3 	= calculate_termocouple((avgAdcBuffer[TC3_ROW_BUFFER]*1000)/1010);
