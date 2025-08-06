@@ -71,7 +71,7 @@ void DWIN_enterManuelProcess(void);
 void DWIN_lambaSuresi(void);
 void DWIN_manuelProcess(void);
 void DWIN_manuelPeriodProcess(void);
-void changeMaxSetValue(uint16_t maxValue);
+void DWIN_changeMaxSetValue(uint16_t maxValue);
 void DWIN_manuelTurboProcess(void);
 void DWIN_arızaCheck(void);
 void DWIN_buharHazirCheck(void);
@@ -84,5 +84,7 @@ void DWIN_readRTC(uint8_t* saniye, uint8_t* dakika, uint8_t* saat, uint8_t* haft
 void DWIN_otomatikSayfa(void);
 void DWIN_otomatikAcmaCheck(void);
 void DWIN_otomatikPisirmeBaslatmaCheck(void);
+DWIN_Response DWIN_buzzerSet(uint8_t setLevel);
+DWIN_Response DWIN_dokunmatik_aktif_msg(void);
 
 #endif /* INC_DWIN_PROCESS_H_ */

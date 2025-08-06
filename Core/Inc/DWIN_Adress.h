@@ -61,6 +61,7 @@
 #define DW_LAMBA_ADR					0x1019
 #define DW_TURBO_ADR					0x101A
 #define DW_PISIRME_ALARM_SUSTURMA_ADR	0x108A
+#define DW_BUTTON_SOUND_ADR				0x17AB
 
 /*------------------------------- ANIMSAYON ADDRESS  --------------------------------*/
 
