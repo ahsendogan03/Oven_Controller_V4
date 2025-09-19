@@ -86,5 +86,6 @@ void DWIN_otomatikAcmaCheck(void);
 void DWIN_otomatikPisirmeBaslatmaCheck(void);
 DWIN_Response DWIN_buzzerSet(uint8_t setLevel);
 DWIN_Response DWIN_dokunmatik_aktif_msg(void);
+DWIN_Response DWIN_buharActivePassive(uint8_t setMode);
 
 #endif /* INC_DWIN_PROCESS_H_ */

@@ -16,7 +16,7 @@ EEPROM_initResponse eepromStatus = EE_INIT_OK;
 
 uint8_t templog_free = 0;
 
-uint16_t eepromAddrTable[15] = {DW_UST_SICAKLIK_SET_ADR,
+uint16_t eepromAddrTable[16] = {DW_UST_SICAKLIK_SET_ADR,
 								DW_ALT_SICAKLIK_SET_ADR,
 								DW_UST_ON_SET_ADR,
 								DW_UST_ARKA_SET_ADR,
@@ -30,7 +30,8 @@ uint16_t eepromAddrTable[15] = {DW_UST_SICAKLIK_SET_ADR,
 								DW_ISITICI_UST_HIS_ADR,
 								DW_ISITICI_ALT_HIS_ADR,
 								DW_ISITICI_PERIOD_ADR,
-								DW_BUTTON_SOUND_ADR
+								DW_BUTTON_SOUND_ADR,
+								DW_BUHAR_ACTIVE_ADR
 							};
 
 extern uint16_t registerTable[9000];
@@ -269,6 +270,7 @@ EEPROM_initResponse EEPROM_init(I2C_HandleTypeDef *hi2c)
 		registerTable[DW_ISITICI_ALT_HIS_ADR]		= 0;
 		registerTable[DW_ISITICI_PERIOD_ADR]		= 60;
 		registerTable[DW_BUTTON_SOUND_ADR]			= 1;
+		registerTable[DW_BUHAR_ACTIVE_ADR] 			= 1;
 
 		uint8_t usageWrite = EEPROM_USAGE_CHECK_VAL;
 		EEPROM_Write(hi2c, EEPROM_USAGE_CHECK_ADDR, &usageWrite, 1);

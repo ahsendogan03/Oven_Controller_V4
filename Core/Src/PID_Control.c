@@ -164,12 +164,12 @@ void PID_Run()
 			PIDOut_UstArka = 0;
 			TPID_UstArka.OutputSum = 0;
 
-			dutyCycle_ustArka = 25;
+			dutyCycle_ustArka = 40;
 
 			if(TempSetpoint_UstArka > 250)
-				dutyCycle_ustArka = 50;
+				dutyCycle_ustArka = 60;
 			if(TempSetpoint_UstArka > 300)
-				dutyCycle_ustArka = 75;
+				dutyCycle_ustArka = 80;
 
 			SEGGER_RTT_printf(0,"Ust Arka B\r\n");
 		}
@@ -238,7 +238,7 @@ void PID_Run()
 
 		if((TempSetpoint_Alt - (alt_Turbo_Calc/4)) >= altSicaklik)
 		{
-			dutyCycle_Alt = 30;
+			dutyCycle_Alt = 35;
 
 			if(TempSetpoint_Alt > 250)
 				dutyCycle_Alt = 50;

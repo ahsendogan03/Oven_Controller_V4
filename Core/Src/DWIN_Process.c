@@ -797,6 +797,182 @@ DWIN_Response DWIN_buzzerSet(uint8_t setLevel)
 
 }
 
+DWIN_Response DWIN_buharActivePassive(uint8_t setMode)
+{
+	DWIN_Response response = NO_RESPONSE;
+
+	uint8_t txAdr[27] 	=		{0x1D, 0x1E, 0x1F,0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x35,0x36,0x37,0x38,0x39,0x3A,0x3B,0x3C,0x52,0x52,0x53,0x53,0x54,0x54,0x02,0x02,0x02};
+	uint8_t txData_order[27] =	{0x01,0x04,0x04,0x04,0x06,0x05,0x05,0x06,0x05,0x05,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x06,0x07,0x00,0x01,0x00,0x01,0x07,0x08,0x00};
+	uint8_t txData_id[27]	 =	{0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x08};
+
+	for(int i=0;i<27;i++)
+	{
+		uint8_t txMsg[16] 	= 	{0x5A, 0xA5, 0x0D, 0x82, 0x00, 0xB0, 0x5A, 0xA5, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0xFF, 0xAA, 0xAA};
+
+		txMsg[9] 	= txAdr[i];
+		txMsg[10]	= txData_order[i];
+		txMsg[11]	= txData_id[i];
+		txMsg[13]	= setMode;
+
+		uint8_t crcBuffer[11];
+
+		for(int j=3;j<14;j++)
+			crcBuffer[j-3] = txMsg[j];
+
+		uint16_t crc = calculateCRC16Modbus(crcBuffer,11);
+
+		txMsg[14] = crc & 0xFF;
+		txMsg[15] = (crc >> 8) & 0xFF;
+
+		uint8_t numOfAttempts = 0;
+
+		sendPoint:
+
+		HAL_Delay(20);
+
+		//DWIN.receiveStatus = NO_RESPONSE;
+		memset(DWIN_rxBuffer,0,sizeof(DWIN_rxBuffer));
+
+		DWIN.rxDoneFlag = 0;
+		HAL_UART_Transmit(DWIN_huart_channel, txMsg, sizeof(txMsg), 100);
+		numOfAttempts++;
+
+		uint32_t timeOut = HAL_GetTick();
+		while((DWIN.rxDoneFlag != 1)&&((HAL_GetTick() - timeOut)<=TIMEOUT_MS));
+
+		if(((HAL_GetTick() - timeOut) <= TIMEOUT_MS)&&(numOfAttempts <= MAX_ATTEMPT))
+		{
+			response = DWIN_receiveDataProcess();
+
+			if(response == WRITE_OK)
+				DWIN.rxDoneFlag = 0;
+
+			else if(response != READ_OK)
+			{
+				#if DEBUG_DWIN == 1
+				SEGGER_RTT_printf(0,"DWIN WRITE ERROR \r\n");
+				#endif
+
+
+				goto sendPoint;
+			}
+		}
+		else
+		{
+			if(numOfAttempts <= MAX_ATTEMPT)
+			{
+				#if DEBUG_DWIN == 1
+				SEGGER_RTT_printf(0,"DWIN NO RESPONSE \r\n");
+				#endif
+
+				goto sendPoint;
+			}
+
+			DWIN.Init = 0;
+			DWIN.rxDoneFlag = 0;
+
+			break;
+		}
+	}
+
+	if(response != NO_RESPONSE)
+	{
+		uint16_t setModeu16 = setMode;
+		DWIN_writeRegiser(&setModeu16, 0xF300, sizeof(setModeu16));
+		response = DWIN_writeRegiser(&setModeu16, DW_BUHAR_ACTIVE_ADR, sizeof(setModeu16));
+	}
+
+	return response;
+}
+
+//DWIN_Response DWIN_buharActivePassive(uint8_t setMode)
+//{
+//	DWIN_Response response = NO_RESPONSE;
+//
+//	uint8_t txData[3][16] = {	{0x5A,0xA5,0x0D,0x82,0x00,0xB0,0x5A,0xA5,0x00,0x02,0x07,0x02,0x00,setMode,0xFF,0xFF},
+//								{0x5A,0xA5,0x0D,0x82,0x00,0xB0,0x5A,0xA5,0x00,0x02,0x08,0x02,0x00,setMode,0xFF,0xFF},
+//								{0x5A,0xA5,0x0D,0x82,0x00,0xB0,0x5A,0xA5,0x00,0x02,0x00,0x08,0x00,setMode,0xFF,0xFF}
+//							};
+//
+//	for(int i=0;i<3;i++)
+//	{
+//		uint8_t txBuffer[16];
+//
+//		for(int j=0;j<16;j++)
+//			txBuffer[j] = txData[i][j];
+//
+//		uint8_t crcBuffer[11];
+//
+//		for(int i=3;i<14;i++)
+//			crcBuffer[i-3] = txBuffer[i];
+//
+//		uint16_t crc = calculateCRC16Modbus(crcBuffer,11);
+//
+//		txBuffer[14] = crc & 0xFF;
+//		txBuffer[15] = (crc >> 8) & 0xFF;
+//
+//		uint8_t numOfAttempts = 0;
+//
+//		sendPoint:
+//
+//		HAL_Delay(50);
+//
+//		//DWIN.receiveStatus = NO_RESPONSE;
+//		memset(DWIN_rxBuffer,0,sizeof(DWIN_rxBuffer));
+//
+//		DWIN.rxDoneFlag = 0;
+//		HAL_UART_Transmit(DWIN_huart_channel, txBuffer, sizeof(txBuffer), 100);
+//		numOfAttempts++;
+//
+//		uint32_t timeOut = HAL_GetTick();
+//		while((DWIN.rxDoneFlag != 1)&&((HAL_GetTick() - timeOut)<=TIMEOUT_MS));
+//
+//		if(((HAL_GetTick() - timeOut) <= TIMEOUT_MS)&&(numOfAttempts <= MAX_ATTEMPT))
+//		{
+//			response = DWIN_receiveDataProcess();
+//
+//			if(response == WRITE_OK)
+//				DWIN.rxDoneFlag = 0;
+//
+//			else if(response != READ_OK)
+//			{
+//				#if DEBUG_DWIN == 1
+//				SEGGER_RTT_printf(0,"DWIN WRITE ERROR \r\n");
+//				#endif
+//
+//
+//				goto sendPoint;
+//			}
+//		}
+//		else
+//		{
+//			if(numOfAttempts <= MAX_ATTEMPT)
+//			{
+//				#if DEBUG_DWIN == 1
+//				SEGGER_RTT_printf(0,"DWIN NO RESPONSE \r\n");
+//				#endif
+//
+//				goto sendPoint;
+//			}
+//
+//			DWIN.Init = 0;
+//			DWIN.rxDoneFlag = 0;
+//
+//			break;
+//		}
+//	}
+//
+//	if(response != NO_RESPONSE)
+//	{
+//		uint16_t setModeu16 = setMode;
+//		DWIN_writeRegiser(&setModeu16, 0xF300, sizeof(setModeu16));
+//		response = DWIN_writeRegiser(&setModeu16, DW_BUHAR_ACTIVE_ADR, sizeof(setModeu16));
+//	}
+//
+//	return response;
+//
+//}
+
 DWIN_Response DWIN_dokunmatik_aktif_msg(void)
 {
 	DWIN_Response response = NO_RESPONSE;
@@ -1463,8 +1639,11 @@ void DWIN_check(void)
 					DWIN_writeRegiser(&writeData, DW_BUTTON_SOUND_ADR, sizeof(writeData));
 				}
 
-				DWIN_dokunmatik_aktif_msg();
+				if(registerTable[DW_BUHAR_ACTIVE_ADR] != 1)
+					DWIN_buharActivePassive(0);
 
+
+				DWIN_dokunmatik_aktif_msg();
 
 				writeData = 0;
 
@@ -1830,6 +2009,20 @@ void DWIN_anaSayfa(void)
 			EEPROM_Write(&hi2c1, DW_ISITICI_PERIOD_ADR, data2, sizeof(data2));
 
 			DWIN_changeMaxSetValue(data);
+
+		break;
+
+		case DW_BUHAR_ACTIVE_ADR:
+
+			registerTable[DW_BUHAR_ACTIVE_ADR] = data;
+
+			DWIN_buharActivePassive(data);
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_BUHAR_ACTIVE_ADR, data2, sizeof(data2));
+
+
 
 		break;
 
