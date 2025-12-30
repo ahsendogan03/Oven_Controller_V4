@@ -36,7 +36,7 @@ extern uint8_t rxBusyFlag;
 
 tickCounter counterTick;
 
-uint16_t registerTable[9000];
+uint16_t registerTable[REGISTER_TABLE_SIZE];
 
 
 uint16_t pisirmeManuelDownCounter 	= 0;
@@ -1842,7 +1842,7 @@ void DWIN_answerProcess(void)
 void DWIN_anaSayfa(void)
 {
 	uint16_t addr = combineBytes(DWIN_rxBuffer[4], DWIN_rxBuffer[5]);
-	uint16_t data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);;
+	uint16_t data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
 	uint8_t data2[2];
 
 	switch(addr)

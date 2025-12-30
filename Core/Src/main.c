@@ -96,6 +96,7 @@ void delay_funct(uint16_t dly)
 		HAL_Delay(0);
 	}
 }
+uint8_t switch_check = 0;
 /* USER CODE END 0 */
 
 /**
@@ -153,6 +154,7 @@ int main(void)
 
 		  HAL_GPIO_TogglePin(RUN_LED);
 	  }
+
 
 	  if(adc_Init() != HAL_OK)
 	  {

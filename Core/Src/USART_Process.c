@@ -15,8 +15,8 @@ uint8_t DWIN_rxBuffer[DWIN_rxBufferSize];
 uint8_t main_DWIN_rxBuffer[DWIN_rxBufferSize];
 
 
-uint8_t ESP32_rxBuffer[ESP32_rxBufferSize];
-uint8_t main_ESP32_rxBuffer[ESP32_rxBufferSize];
+uint8_t ESP32_rxBuffer[ESP32_RX_BUFFER_SIZE];
+uint8_t main_ESP32_rxBuffer[ESP32_RX_BUFFER_SIZE];
 
 USART_TypeDef *DWIN_usartDeclaration;
 UART_HandleTypeDef *DWIN_huart_channel;

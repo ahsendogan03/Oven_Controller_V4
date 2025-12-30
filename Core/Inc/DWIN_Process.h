@@ -20,6 +20,8 @@
 #define READ_CMD 		0x83
 #define WRITE_CMD		0x82
 
+#define REGISTER_TABLE_SIZE   9000
+
 typedef enum
 {
 	NO_RESPONSE	= 	0,

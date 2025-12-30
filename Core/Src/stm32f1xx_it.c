@@ -47,8 +47,8 @@
 /* USER CODE BEGIN PV */
 extern uint8_t DWIN_rxBuffer[DWIN_rxBufferSize];
 extern uint8_t main_DWIN_rxBuffer[DWIN_rxBufferSize];
-extern uint8_t ESP32_rxBuffer[ESP32_rxBufferSize];
-extern uint8_t main_ESP32_rxBuffer[DWIN_rxBufferSize];
+extern uint8_t ESP32_rxBuffer[ESP32_RX_BUFFER_SIZE];
+extern uint8_t main_ESP32_rxBuffer[ESP32_RX_BUFFER_SIZE];
 
 extern usartInfo DWIN;
 extern usartInfo ESP32;
@@ -288,12 +288,13 @@ void USART1_IRQHandler(void)
   /* USER CODE BEGIN USART1_IRQn 1 */
 	if(__HAL_UART_GET_FLAG(&huart1, UART_FLAG_IDLE))
 	{
+
 		__HAL_UART_CLEAR_IDLEFLAG(&huart1);
 		HAL_UART_DMAStop(&huart1);
 
-		memcpy(ESP32_rxBuffer,main_ESP32_rxBuffer,ESP32_rxBufferSize);
+		memcpy(ESP32_rxBuffer,main_ESP32_rxBuffer,ESP32_RX_BUFFER_SIZE);
 
-		HAL_UART_Receive_DMA(&huart1, main_ESP32_rxBuffer, ESP32_rxBufferSize);
+		HAL_UART_Receive_DMA(&huart1, main_ESP32_rxBuffer, ESP32_RX_BUFFER_SIZE);
 
 		ESP32.rxDoneFlag = 1;
 

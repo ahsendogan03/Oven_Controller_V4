@@ -10,9 +10,16 @@
 
 #include "main.h"
 
-#define MB_READ_CMD 			0x03
-#define MB_WRITE_CMD			0x16
+// Modbus komut kodları
+#define MB_READ_CMD           	0x03
+#define MB_WRITE_CMD          	0x10
+#define TARGET_READ_REGISTER  	0x99
+
+#define MAX_WRITE_REGISTERS   100
+
 #define BLUETOOTH_TIMEOUT_MS	4000
+#define DEBUG_ESP32 1
+
 
 HAL_StatusTypeDef ESP32_SetUsartChannel(UART_HandleTypeDef *huart, USART_TypeDef *Declaration, DMA_HandleTypeDef *hdma);
 void ESP32_receiveDataProcess(void);
