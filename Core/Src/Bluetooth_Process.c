@@ -12,6 +12,7 @@
 #include "string.h"
 #include "InOut_Process.h"
 #include "EEPROM_Process.h"
+#include "DWIN_Adress.h"
 
 #define MEM_READ_32(addr) (*(volatile uint32_t *)(addr))
 
@@ -37,13 +38,22 @@ extern uint8_t pisirmeSonuAlarmBuzzer;
 
 extern uint8_t ustOnTurbo 		;
 extern uint8_t ustArkaTurbo 	;
-extern uint8_t altTurbo		;
+extern uint8_t altTurbo			;
 
 uint16_t ESP32_writeData[100];
 uint16_t ESP32_writeAmountAddress = 0;
 uint16_t ESP32_writeAddress = 0;
 
 uint8_t esp32_txBuffer[255];
+
+uint8_t stm32RequestReadyCheck = 0;
+uint16_t stm32RequestReadyCheckCounter = 0;
+uint8_t stm32RequestFlag = 0;
+
+uint16_t stm32RequestData[100] 	= {0};
+uint16_t stm32RequestAddr 		= 0;
+uint8_t stm32RequestLength 		= 0;
+uint32_t stm32RequestPeriodTick = 0;
 
 HAL_StatusTypeDef ESP32_SetUsartChannel(UART_HandleTypeDef *huart, USART_TypeDef *Declaration, DMA_HandleTypeDef *hdma)
 {
@@ -126,9 +136,6 @@ void ESP32_receiveDataProcess(void)
         #endif
         return;
     }
-
-    // CRC OK - Bluetooth bağlantı zaman damgası güncelle
-    counterTick.bluetoothCheck = HAL_GetTick();
 
     #if DEBUG_ESP32 == 1
     SEGGER_RTT_printf(0, "ESP32 RX [%d bytes]: ", size);
@@ -335,7 +342,7 @@ void ESP32_receiveDataProcess(void)
                 #if DEBUG_ESP32 == 1
                 if(i < 5)  // İlk 5 değeri göster
                 {
-                    SEGGER_RTT_printf(0, "  ESP32_writeData[%d] = 0x%04X\r\n", i, ESP32_writeData[i]);
+                    SEGGER_RTT_printf(0, "ESP32_writeData[%d] = 0x%04X\r\n", i, ESP32_writeData[i]);
                 }
                 #endif
             }
@@ -362,11 +369,14 @@ void ESP32_receiveDataProcess(void)
             esp32_txBuffer[6] = lowByte;
             esp32_txBuffer[7] = highByte;
 
-            HAL_UART_Transmit_IT(ESP32_huart_channel, esp32_txBuffer, 8);
+            if(ESP32_writeAddress != STM32_OTA_BEGIN_ADR)
+            {
+				HAL_UART_Transmit_IT(ESP32_huart_channel, esp32_txBuffer, 8);
 
-            #if DEBUG_ESP32 == 1
-            SEGGER_RTT_printf(0, "ESP32 Write ACK sent\r\n");
-            #endif
+				#if DEBUG_ESP32 == 1
+				SEGGER_RTT_printf(0, "ESP32 Write ACK sent\r\n");
+				#endif
+            }
 
             break;
         }
@@ -383,8 +393,19 @@ void ESP32_receiveDataProcess(void)
 
 void Bluetooth_Check(void)
 {
-	if(ESP32.rxDoneFlag == 1)
+
+	STM32_RequestCheck_Process();
+
+	if((ESP32.rxDoneFlag == 1)&&(stm32RequestFlag == 0))
 	{
+	    // CRC OK - Bluetooth bağlantı zaman damgası güncelle
+	    counterTick.bluetoothCheck = HAL_GetTick();
+
+	    if(stm32RequestReadyCheck == 1)
+	    {
+	    	stm32RequestReadyCheckCounter = 0;
+	    }
+
 		ESP32.rxDoneFlag = 0;
 		ESP32_receiveDataProcess();
 	}
@@ -433,6 +454,211 @@ void Bluetooth_writeRegister(void)
 	}
 }
 
+void STM32_RequestReadyCounter(void)
+{
+	if(stm32RequestReadyCheck == 1)
+	{
+		stm32RequestReadyCheckCounter++;
+
+		if(stm32RequestReadyCheckCounter > 2000)
+		{
+			stm32RequestFlag 		= 1;
+			stm32RequestReadyCheck 	= 0;
+		}
+	}
+}
+
+void STM32_RequestBufferWrite(uint16_t* pBuffer, uint16_t addr, uint8_t len)
+{
+	uint8_t numOfRegister 	= len / 2;
+
+	stm32RequestAddr		= addr;
+	stm32RequestLength		= len;
+
+	for(int i=0;i<numOfRegister;i++)
+		stm32RequestData[i] = pBuffer[i];
+
+	if(registerTable[BLE_DVC_LOCK_ADR] == 1)
+	{
+		stm32RequestReadyCheck = 1;
+		stm32RequestReadyCheckCounter = 0;
+	}
+}
+
+void STM32_RequestCheck_Process(void)
+{
+	if(stm32RequestFlag)
+	{
+		if((HAL_GetTick() - stm32RequestPeriodTick) > 1000)
+		{
+			stm32RequestPeriodTick = HAL_GetTick();
+			ESP32_writeRegister(stm32RequestData, stm32RequestAddr, stm32RequestLength);
+			SEGGER_RTT_printf(0,"STM32 Request Send ! Addr: %04X NumOfReg: %d \r\n",stm32RequestAddr,stm32RequestLength/2);
+		}
+		if(ESP32.rxDoneFlag)
+		{
+		    // Bluetooth bağlantı zaman damgası güncelle
+		    counterTick.bluetoothCheck = HAL_GetTick();
+
+		    if(ESP32_receiveDataCheck() != ESP32_NO_RESPONSE)
+		    {
+		    	SEGGER_RTT_printf(0,"STM32 Request Receive OK ! \r\n");
+		    	stm32RequestFlag = 0;
+		    }
+
+			ESP32.rxDoneFlag = 0;
+
+		}
+	}
+}
+
+ESP32_Response ESP32_receiveDataCheck(void)
+{
+	ESP32_Response response = ESP32_NO_RESPONSE;
+
+	// Minimum kontrol - buffer boş mu?
+	if(ESP32_rxBuffer[0] == 0x00)
+	{
+		return NO_RESPONSE;
+	}
+
+	// Slave ID kontrolü
+	if(ESP32_rxBuffer[0] != 0x01)
+	{
+		#if DEBUG_ESP32 == 1
+		SEGGER_RTT_printf(0, "ESP32 INVALID SLAVE ID: 0x%02X\r\n", ESP32_rxBuffer[0]);
+		#endif
+		return NO_RESPONSE;
+	}
+
+	uint8_t functionCode = ESP32_rxBuffer[1];
+
+	// Exception Code kontrolü (MSB set ise exception)
+	if(functionCode & 0x80)
+	{
+		#if DEBUG_ESP32 == 1
+		SEGGER_RTT_printf(0, "ESP32 EXCEPTION: Function=0x%02X, Exception Code=0x%02X\r\n",
+						  functionCode, ESP32_rxBuffer[2]);
+		#endif
+		return NO_RESPONSE;
+	}
+
+	uint8_t frameLength = 0;
+
+	// Function code'a göre frame uzunluğunu belirle
+	if(functionCode == 0x03)  // Read Holding Registers
+	{
+		uint8_t byteCount = ESP32_rxBuffer[2];
+		frameLength = 3 + byteCount + 2;  // Slave ID + FC + Byte Count + Data + CRC
+	}
+	else if(functionCode == 0x10)  // Write Multiple Registers
+	{
+		frameLength = 8;  // Slave ID + FC + Start Addr (2) + Quantity (2) + CRC (2)
+	}
+	else
+	{
+		#if DEBUG_ESP32 == 1
+		SEGGER_RTT_printf(0, "ESP32 UNKNOWN FUNCTION CODE: 0x%02X\r\n", functionCode);
+		#endif
+		return NO_RESPONSE;
+	}
+
+	// CRC kontrolü (Modbus RTU: CRC Little Endian)
+	uint16_t receivedCRC = (ESP32_rxBuffer[frameLength - 1] << 8) | ESP32_rxBuffer[frameLength - 2];
+	uint16_t calculatedCRC = calculateCRC16Modbus(ESP32_rxBuffer, frameLength - 2);
+
+	if(receivedCRC != calculatedCRC)
+	{
+		#if DEBUG_ESP32 == 1
+		SEGGER_RTT_printf(0, "ESP32 CRC ERROR: Received=0x%04X, Calculated=0x%04X\r\n",
+						  receivedCRC, calculatedCRC);
+		#endif
+		return CRC_ERROR;
+	}
+
+
+	// Function code'a göre yanıt işleme
+	if(functionCode == 0x03)  // Read Holding Registers
+	{
+		#if DEBUG_ESP32 == 1
+		uint8_t byteCount = ESP32_rxBuffer[2];
+		SEGGER_RTT_printf(0, "ESP32 READ OK: %d bytes received\r\n", byteCount);
+		#endif
+		response = READ_OK;
+	}
+	else if(functionCode == 0x10)  // Write Multiple Registers
+	{
+		#if DEBUG_ESP32 == 1
+		uint16_t startAddr = (ESP32_rxBuffer[2] << 8) | ESP32_rxBuffer[3];
+		uint16_t quantity = (ESP32_rxBuffer[4] << 8) | ESP32_rxBuffer[5];
+		SEGGER_RTT_printf(0, "ESP32 WRITE OK: Addr=0x%04X, Quantity=%d\r\n",
+						  startAddr, quantity);
+		#endif
+		response = WRITE_OK;
+	}
+
+	return response;
+}
+
+ESP32_Response ESP32_writeRegister(uint16_t* pBuffer, uint16_t addr, uint8_t len)
+{
+	ESP32_Response response = ESP32_NO_RESPONSE;
+
+	uint8_t numOfRegister = len / 2;
+
+	// Modbus RTU Frame Header
+	esp32_txBuffer[0] = 0x01;        // Slave ID
+	esp32_txBuffer[1] = 0x10;                 // Function Code: Write Multiple Registers
+
+	// Starting Address (Big Endian)
+	esp32_txBuffer[2] = (addr >> 8) & 0xFF;   // Address High Byte
+	esp32_txBuffer[3] = addr & 0xFF;          // Address Low Byte
+
+	// Number of Registers (Big Endian)
+	esp32_txBuffer[4] = (numOfRegister >> 8) & 0xFF;  // Quantity High Byte
+	esp32_txBuffer[5] = numOfRegister & 0xFF;         // Quantity Low Byte
+
+	// Byte Count
+	esp32_txBuffer[6] = numOfRegister * 2;
+
+	// Register Data (Big Endian)
+	for(int i = 0; i < numOfRegister; i++)
+	{
+		uint16_t writeData = pBuffer[i];
+
+		esp32_txBuffer[7 + (i*2)] = (writeData >> 8) & 0xFF;  // High Byte
+		esp32_txBuffer[8 + (i*2)] = writeData & 0xFF;         // Low Byte
+	}
+
+	// Calculate CRC16 for entire frame (except CRC bytes)
+	uint16_t crc = calculateCRC16Modbus(esp32_txBuffer, 7 + (numOfRegister*2));
+
+	// CRC bytes (Little Endian for Modbus RTU)
+	esp32_txBuffer[7 + (numOfRegister*2)] = crc & 0xFF;           // CRC Low Byte
+	esp32_txBuffer[8 + (numOfRegister*2)] = (crc >> 8) & 0xFF;    // CRC High Byte
+
+	memset(ESP32_rxBuffer, 0, sizeof(ESP32_rxBuffer));
+
+	ESP32.rxDoneFlag = 0;
+
+	if(ESP32.rxDoneFlag != 1)
+	{
+		if(__HAL_UART_GET_FLAG(&huart3, UART_FLAG_IDLE) == 0)
+		{
+			if(huart3.gState == HAL_UART_STATE_READY)
+			{
+				memset(ESP32_rxBuffer, 0, sizeof(ESP32_rxBuffer));
+
+				ESP32.rxDoneFlag = 0;
+				response = HAL_UART_Transmit_IT(ESP32_huart_channel, esp32_txBuffer, 9 + (numOfRegister*2));
+
+			}
+		}
+
+	}
+
+	return response;
+}
 void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 {
 	uint16_t data = value;
@@ -440,6 +666,10 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 
 	switch(addr)
 	{
+
+		case STM32_OTA_BEGIN_ADR:
+			Jump_To_Bootloader();
+		break;
 
 		case DW_LAMBA_ADR:
 
@@ -747,5 +977,25 @@ void Bluetooth_run(void)
 	Bluetooth_writeRegister();
 }
 
+void set_bootloader_request_flag(void)
+{
+    /* PWR & BKP clock enable */
+    RCC->APB1ENR |= RCC_APB1ENR_PWREN | RCC_APB1ENR_BKPEN;
+
+    /* Backup domain erişimi aç */
+    PWR->CR |= PWR_CR_DBP;
+
+    /* Magic number yaz */
+    BKP->DR1 = BL_MAGIC_NUMBER;
+
+    /* Yazma tamamlandıktan sonra reset */
+}
+
+void Jump_To_Bootloader(void)
+{
+	set_bootloader_request_flag();
+	HAL_Delay(10);
+	NVIC_SystemReset();
+}
 
 

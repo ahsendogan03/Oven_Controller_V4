@@ -16,7 +16,7 @@
 #define TIMEOUT_MS 10
 #define MAX_ATTEMPT 3
 
-#define VERSION_ADDR 	0x000F
+#define DWIN_VERSION_ADDR 	0x000F
 #define READ_CMD 		0x83
 #define WRITE_CMD		0x82
 

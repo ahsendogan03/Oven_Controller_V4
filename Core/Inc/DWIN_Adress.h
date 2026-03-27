@@ -11,6 +11,13 @@
 #include "main.h"
 
 
+#define STM32_OTA_BEGIN_ADR 100
+#define STM32_VERSION_ADR 	101
+
+#define BLE_DVC_CONN_ADR  	3000
+#define BLE_DVC_LOCK_ADR  	3001
+
+
 /*---------------------------- SAYFALAR ------------------------------*/
 
 #define MANUEL_SURE_SONU_ADR			0x53

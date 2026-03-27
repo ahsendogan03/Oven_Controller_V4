@@ -35,9 +35,8 @@ uint16_t eepromAddrTable[16] = {DW_UST_SICAKLIK_SET_ADR,
 							};
 
 extern uint16_t registerTable[9000];
-extern uint16_t receteAdimSayisiTable[DW_RECETE_AMOUNT];
 
-EEPROM_writeResponse AT24C256_WaitForReady(I2C_HandleTypeDef *hi2c) {
+EEPROM_writeResponse AT24C512_WaitForReady(I2C_HandleTypeDef *hi2c) {
 
 	EEPROM_writeResponse response = EEPROM_BUSY;
 	uint16_t timeOut = 0;
@@ -96,7 +95,7 @@ EEPROM_writeResponse EEPROM_Write(I2C_HandleTypeDef *hi2c,uint16_t memAddress, u
 
 
 			// EEPROM yazmasi icin gereken sure
-			if(AT24C256_WaitForReady(hi2c) != EE_WRITE_OK)
+			if(AT24C512_WaitForReady(hi2c) != EE_WRITE_OK)
 			{
 				SEGGER_RTT_printf(0,"EEPROM TIMEOUT ! \r\n");
 				response = EE_WRITE_ERROR;

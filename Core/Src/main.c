@@ -42,19 +42,48 @@
 //#include "hdc1080.h"
 #include "TMP112.h"
 #include "PID_Control.h"
+#include "version.h"
 
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
+extern DMA_HandleTypeDef hdma_usart3_rx;
+extern DMA_HandleTypeDef hdma_usart1_rx;
+extern I2C_HandleTypeDef hi2c1;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-extern DMA_HandleTypeDef hdma_usart3_rx;
-extern DMA_HandleTypeDef hdma_usart1_rx;
-extern I2C_HandleTypeDef hi2c1;
+#define FLASH_PACKET_SIZE     	128 // byte
+
+
+#define FLASH_BASE_ADDR     	FLASH_BASE
+#define FLASH_END_ADDR			FLASH_BANK1_END
+
+#define FLASH_SECTOR_SIZE   	0x800U      // 2 KB
+
+#define SLOT_DATA_SIZE			96			// KB (max
+
+#define SLOT1_START_ADDR		0x08005000U
+#define SLOT1_START_SECTOR		10
+#define SLOT1_END_SECTOR		SLOT1_START_SECTOR + (SLOT_DATA_SIZE/2) - 1
+
+
+#if ((((SLOT_DATA_SIZE * 2)/2)*FLASH_SECTOR_SIZE) + 0x08005000U) < FLASH_END_ADDR
+#define SLOT2_START_ADDR	SLOT1_START_ADDR + ((SLOT_DATA_SIZE/2)*FLASH_SECTOR_SIZE)
+#define SLOT2_START_SECTOR		SLOT1_END_SECTOR + 1
+#define SLOT2_END_SECTOR		SLOT2_START_SECTOR + (SLOT_DATA_SIZE/2) - 1
+#endif
+
+#define FLASH_INFO_ADDR	SLOT1_START_ADDR - FLASH_SECTOR_SIZE
+#define FLASH_INFO_SECTOR (FLASH_INFO_ADDR - FLASH_BASE_ADDR) / FLASH_SECTOR_SIZE
+
+#define FLASH_INFO_CHECK_NUMBER	0x99
+
+#define FLASH_SECTOR_ADDR(sector) (FLASH_BASE_ADDR + ((sector) * FLASH_SECTOR_SIZE))
+
+#define SAFE_PROGRAM_DECL_WAIT	60000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -83,10 +112,6 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 extern uint16_t registerTable[9000];
-uint16_t motor_check = 0;
-uint16_t motor_counter = 0;
-uint16_t motor_check2 = 0;
-uint16_t motor_counter2 = 0;
 
 void delay_funct(uint16_t dly)
 {
@@ -96,7 +121,145 @@ void delay_funct(uint16_t dly)
 		HAL_Delay(0);
 	}
 }
-uint8_t switch_check = 0;
+
+uint32_t BytesToUint32(const uint8_t *buf)
+{
+    return  ((uint32_t)buf[0])        |
+           (((uint32_t)buf[1]) << 8)  |
+           (((uint32_t)buf[2]) << 16) |
+           (((uint32_t)buf[3]) << 24);
+}
+
+static HAL_StatusTypeDef Flash_IsAddressValid(uint32_t address, uint32_t length)
+{
+    if ((address % 4) != 0)
+        return HAL_ERROR;
+
+    uint32_t endAddr = address + (length * 4);
+
+    if (address < FLASH_BASE_ADDR || endAddr > FLASH_END_ADDR)
+        return HAL_ERROR;
+
+    return HAL_OK;
+}
+
+HAL_StatusTypeDef Flash_Erase_Sector(uint32_t sectorNumber)
+{
+    FLASH_EraseInitTypeDef eraseInit;
+    uint32_t pageError;
+
+    uint32_t sectorAddress = FLASH_SECTOR_ADDR(sectorNumber);
+
+    HAL_FLASH_Unlock();
+
+    eraseInit.TypeErase   = FLASH_TYPEERASE_PAGES;
+    eraseInit.PageAddress = sectorAddress;
+    eraseInit.NbPages     = 1;
+
+    HAL_StatusTypeDef status = HAL_FLASHEx_Erase(&eraseInit, &pageError);
+
+    HAL_FLASH_Lock();
+
+    return status;
+}
+
+HAL_StatusTypeDef Flash_Read(uint32_t address,
+                             uint8_t *data,
+                             uint32_t length)
+{
+    /* Parametre kontrolleri */
+    if (data == NULL || length == 0)
+        return HAL_ERROR;
+
+    /* Flash adres aralığı kontrolü */
+    if (Flash_IsAddressValid(address, length) != HAL_OK)
+        return HAL_ERROR;
+
+    /* Okuma */
+    for (uint32_t i = 0; i < length; i++)
+    {
+        data[i] = *(volatile uint8_t *)(address + i);
+    }
+
+    return HAL_OK;
+}
+
+
+
+HAL_StatusTypeDef Flash_Write(uint32_t address,
+                              uint32_t *data,
+                              uint32_t length)
+{
+    HAL_StatusTypeDef status;
+
+    if (data == NULL)
+        return HAL_ERROR;
+
+    if (Flash_IsAddressValid(address, length) != HAL_OK)
+        return HAL_ERROR;
+
+    HAL_FLASH_Unlock();
+
+    for (uint32_t i = 0; i < length; i++)
+    {
+        status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD,
+                                   address + (i * 4),
+                                   data[i]);
+
+        if (status != HAL_OK)
+        {
+            HAL_FLASH_Lock();
+            return HAL_ERROR;
+        }
+    }
+
+    HAL_FLASH_Lock();
+
+    /* ===== VERIFY ===== */
+    for (uint32_t i = 0; i < length; i++)
+    {
+        uint32_t flashData =
+            *(volatile uint32_t *)(address + (i * 4));
+
+        if (flashData != data[i])
+        {
+            return HAL_ERROR;
+        }
+    }
+
+    return HAL_OK;
+}
+
+uint32_t safeProgramWait_tick = 0;
+uint32_t safeProgramWait_flag = 0;
+void safeProgram_Declaration(void)
+{
+	if(safeProgramWait_flag == 0)
+	{
+		if((safeProgramWait_tick - HAL_GetTick()) > SAFE_PROGRAM_DECL_WAIT)
+		{
+			safeProgramWait_flag = 1;
+
+			uint8_t flash_info_read[4] = {0};
+
+			if(Flash_Read(FLASH_INFO_ADDR, flash_info_read, sizeof(flash_info_read)) != HAL_OK)
+			{
+				SEGGER_RTT_printf(0,"FLASH Error \r\n");
+				return;
+			}
+
+			flash_info_read[2] = 0;						// Maximum hatalı program sayacı sıfırlanıyor
+
+			if(Flash_Erase_Sector(FLASH_INFO_SECTOR) != HAL_OK)
+				return;
+
+			uint32_t flash_info_data_u32 = BytesToUint32(flash_info_read);
+			Flash_Write(FLASH_INFO_ADDR, &flash_info_data_u32, sizeof(flash_info_data_u32)/4);
+
+		}
+	}
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -199,8 +362,6 @@ int main(void)
 
 	  memset(registerTable,0,sizeof(registerTable));
 
-	  if(EEPROM_init(&hi2c1) != EE_INIT_OK)
-		  SEGGER_RTT_printf(0,"EEPROM Init Error ! \r\n");
 
 	  HAL_Delay(2000);
 
@@ -210,8 +371,15 @@ int main(void)
 	  RTC_SetDateTime(saat, dakika, saniye, gun, ay, yil);
 	  ///////////////////////////////////////////////////////////////////
 
+	  if(EEPROM_init(&hi2c1) != EE_INIT_OK)
+		  SEGGER_RTT_printf(0,"EEPROM Init Error ! \r\n");
+
 
 	  HAL_RTCEx_SetSecond_IT(&hrtc);
+
+	  registerTable[STM32_VERSION_ADR] = FW_VERSION;
+
+	  safeProgramWait_tick = HAL_GetTick();
 
 
   /* USER CODE END 2 */
@@ -225,6 +393,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
 	  DWIN_run();
 	  Bluetooth_run();
+	  safeProgram_Declaration();
 
   }
   /* USER CODE END 3 */

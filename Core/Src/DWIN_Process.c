@@ -17,6 +17,7 @@
 #include "EEPROM_Process.h"
 #include "PID_Control.h"
 #include "hdc1080.h"
+#include "Bluetooth_Process.h"
 
 extern TemperatureData temp;
 extern uint8_t DWIN_rxBuffer[DWIN_rxBufferSize];
@@ -31,8 +32,6 @@ extern I2C_HandleTypeDef hi2c1;
 extern usartInfo DWIN;
 
 extern uint16_t eepromAddrTable[7];
-
-extern uint8_t rxBusyFlag;
 
 tickCounter counterTick;
 
@@ -68,6 +67,10 @@ uint16_t islemdekiOtomatikAktifIkon	= 0;
 
 uint8_t otomatikPisirmeBaslatmaFlag = 0;
 
+static inline void UserApp_IWDG_Refresh(void)
+{
+    IWDG->KR = 0xAAAA;
+}
 
 // 8 bitlik iki sayıyı 16 bitlik bir sayıya birleştiren fonksiyon
 uint16_t combineBytes(uint8_t highByte, uint8_t lowByte) {
@@ -1069,15 +1072,19 @@ DWIN_Response DWIN_dokunmatik_aktif_msg(void)
 
 void DWIN_run(void)
 {
-	if((HAL_GetTick() - counterTick.run) >= 1000)
+	if((HAL_GetTick() - counterTick.run) >= 1000) // manuel pisirme registerını periyodik olarak oku mesaj kaçırabilir
 	{
 		counterTick.run = HAL_GetTick();
 
 		HAL_GPIO_TogglePin(RUN_LED);
 
+		UserApp_IWDG_Refresh();
+
+		calculate_temperature();
+
 		if(DWIN.Init == 1)
 		{
-			calculate_temperature();
+
 
 			registerTable[DW_MCP9700_ADR] 		= temp.TMP;
 			registerTable[DW_UST_SICAKLIK_ADR] 	= temp.TC3;
@@ -1093,7 +1100,6 @@ void DWIN_run(void)
 				if(registerTable[DW_ARIZA_PAGE_ADR] != 1)
 					PID_Run();
 
-
 			}
 
 		}
@@ -1107,7 +1113,7 @@ void DWIN_run(void)
 	}
 
 
-	DWIN_check();
+	DWIN_check();							// Tekrar Init olduğunda reçeteler ve rtc init olmuyor !!
 	DWIN_answerProcess();
 	DWIN_manuelPisirmeSuresi();
 	DWIN_manuelBuharSuresi();
@@ -1608,7 +1614,7 @@ void DWIN_check(void)
 		{
 			uint8_t version[2];
 
-			if(DWIN_readRegister(version, VERSION_ADDR, sizeof(version)) == READ_OK)
+			if(DWIN_readRegister(version, DWIN_VERSION_ADDR, sizeof(version)) == READ_OK)
 			{
 				SEGGER_RTT_printf(0,"DWIN OK ! Version : %x%x\r\n",version[0],version[1]);
 
@@ -2757,7 +2763,7 @@ void DWIN_otomatikSayfa(void)
 
 					uint8_t writeData = 1;
 
-					EEPROM_Write(&hi2c1, EE_OTOMATIK_ACMA_ILK_ADR + 13 + (islemdekiOtomatikAktifIkon*(EE_OTOMATIK_ACMA_PARAM_SIZE + DW_RECETE_ISIM_SIZE)), &writeData, sizeof(writeData));
+					EEPROM_Write(&hi2c1, EE_OTOMATIK_ACMA_ILK_ADR + 13 + (islemdekiOtomatikAktifIkon*EE_OTOMATIK_ACMA_PARAM_SIZE), &writeData, sizeof(writeData));
 
 				}
 
@@ -2770,7 +2776,7 @@ void DWIN_otomatikSayfa(void)
 
 					uint8_t writeData = 0;
 
-					EEPROM_Write(&hi2c1, EE_OTOMATIK_ACMA_ILK_ADR + 13 + (islemdekiOtomatikAktifIkon*(EE_OTOMATIK_ACMA_PARAM_SIZE + DW_RECETE_ISIM_SIZE)), &writeData, sizeof(writeData));
+					EEPROM_Write(&hi2c1, EE_OTOMATIK_ACMA_ILK_ADR + 13 + (islemdekiOtomatikAktifIkon*EE_OTOMATIK_ACMA_PARAM_SIZE), &writeData, sizeof(writeData));
 
 					uint8_t saatIkonCheck = 0;
 
@@ -3232,9 +3238,11 @@ void DWIN_arızaCheck(void)
 {
 	if((temp.TC2 >= 400) && (registerTable[DW_TC2_ARIZA_ADR] != 1))
 	{
+		SEGGER_RTT_printf(0, "TC2 Arizasi ! \r\n");
 		registerTable[DW_TC2_ARIZA_ADR] = 1;
 		uint16_t data = 1;
 		DWIN_writeRegiser(&data, DW_TC2_ARIZA_ADR, sizeof(data));
+		STM32_RequestBufferWrite(&data, DW_TC2_ARIZA_ADR, sizeof(data));
 	}
 
 	if((temp.TC2 < 400) && (registerTable[DW_TC2_ARIZA_ADR] != 0))
@@ -3242,13 +3250,16 @@ void DWIN_arızaCheck(void)
 		registerTable[DW_TC2_ARIZA_ADR] = 0;
 		uint16_t data = 0;
 		DWIN_writeRegiser(&data, DW_TC2_ARIZA_ADR, sizeof(data));
+		STM32_RequestBufferWrite(&data, DW_TC2_ARIZA_ADR, sizeof(data));
 	}
 
 	if((temp.TC3 >= 400) && (registerTable[DW_TC3_ARIZA_ADR] != 1))
 	{
+		SEGGER_RTT_printf(0, "TC3 Arizasi ! \r\n");
 		registerTable[DW_TC3_ARIZA_ADR] = 1;
 		uint16_t data = 1;
 		DWIN_writeRegiser(&data, DW_TC3_ARIZA_ADR, sizeof(data));
+		STM32_RequestBufferWrite(&data, DW_TC3_ARIZA_ADR, sizeof(data));
 	}
 
 	if((temp.TC3 < 400) && (registerTable[DW_TC3_ARIZA_ADR] != 0))
@@ -3256,13 +3267,16 @@ void DWIN_arızaCheck(void)
 		registerTable[DW_TC3_ARIZA_ADR] = 0;
 		uint16_t data = 0;
 		DWIN_writeRegiser(&data, DW_TC3_ARIZA_ADR, sizeof(data));
+		STM32_RequestBufferWrite(&data, DW_TC3_ARIZA_ADR, sizeof(data));
 	}
 
 	if((HAL_GPIO_ReadPin(I_KAPI_SWITCH) == 0)&&(registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] != 1))
 	{
+		SEGGER_RTT_printf(0, "Asiri Sicaklik Arizasi ! \r\n");
 		registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] = 1;
 		uint16_t data = 1;
 		DWIN_writeRegiser(&data, DW_ASIRI_SICAKLIK_ARIZA_ADR, sizeof(data));
+		STM32_RequestBufferWrite(&data, DW_ASIRI_SICAKLIK_ARIZA_ADR, sizeof(data));
 	}
 
 	if((HAL_GPIO_ReadPin(I_KAPI_SWITCH) == 1)&&(registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] != 0))
@@ -3270,6 +3284,7 @@ void DWIN_arızaCheck(void)
 		registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] = 0;
 		uint16_t data = 0;
 		DWIN_writeRegiser(&data, DW_ASIRI_SICAKLIK_ARIZA_ADR, sizeof(data));
+		STM32_RequestBufferWrite(&data, DW_ASIRI_SICAKLIK_ARIZA_ADR, sizeof(data));
 	}
 
 	if(((registerTable[DW_TC2_ARIZA_ADR] == 1) || (registerTable[DW_TC3_ARIZA_ADR] == 1) || (registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] == 1))&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
