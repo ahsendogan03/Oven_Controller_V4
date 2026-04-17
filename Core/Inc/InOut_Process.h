@@ -65,6 +65,17 @@
 #define OE_PORT GPIOA
 
 #define RUN_LED GPIOC, GPIO_PIN_13
+#define ESP32_EN GPIOC, GPIO_PIN_2
+
+#define INPUT_6 GPIOB, GPIO_PIN_15
+#define INPUT_5 GPIOB, GPIO_PIN_14
+#define INPUT_4 GPIOB, GPIO_PIN_13
+#define INPUT_3 GPIOB, GPIO_PIN_12
+#define INPUT_2 GPIOB, GPIO_PIN_11
+#define INPUT_1 GPIOB, GPIO_PIN_10
+
+#define INPUT_AC_1 GPIOC, GPIO_PIN_6
+#define INPUT_AC_2 GPIOC, GPIO_PIN_7
 
 
 void setOut(uint32_t outputAddr, uint8_t status);

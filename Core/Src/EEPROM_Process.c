@@ -16,25 +16,27 @@ EEPROM_initResponse eepromStatus = EE_INIT_OK;
 
 uint8_t templog_free = 0;
 
-uint16_t eepromAddrTable[16] = {DW_UST_SICAKLIK_SET_ADR,
-								DW_ALT_SICAKLIK_SET_ADR,
-								DW_UST_ON_SET_ADR,
-								DW_UST_ARKA_SET_ADR,
-								DW_ALT_SET_ADR,
-								DW_PISIRME_SURESI_ADR,
-								DW_BUHAR_SURESI_ADR,
-								DW_LAMBA_SURESI_ADR,
-								DW_UST_ON_ISITICI_BANDI_ADR,
-								DW_UST_ARKA_ISITICI_BANDI_ADR,
-								DW_ALT_ISITICI_BANDI_ADR,
-								DW_ISITICI_UST_HIS_ADR,
-								DW_ISITICI_ALT_HIS_ADR,
-								DW_ISITICI_PERIOD_ADR,
-								DW_BUTTON_SOUND_ADR,
-								DW_BUHAR_ACTIVE_ADR
-							};
+uint16_t eepromAddrTable[EEPROM_TABLE_LEN] = {	DW_UST_SICAKLIK_SET_ADR,
+												DW_ALT_SICAKLIK_SET_ADR,
+												DW_PISIRME_SURESI_ADR,
+												DW_BUHAR_SURESI_ADR,
+												DW_PARAM_LAMBA_SURESI_ADR,
+												DW_PARAM_BUTTON_SOUND_ADR,
+												DW_PARAM_ALARM_ADR,
+												DW_PARAM_DIL_ADR,
+												DW_PARAM_PSW_ADR,
+												DW_PARAM_BUHAR_ACTIVE_ADR,
+												DW_PARAM_BUHAR_SENSOR_TYPE_ADR,
+												DW_PARAM_BUHAR_MAX_SET_ADR,
+												DW_PARAM_BUHAR_HAZIR_SICAK_ADR,
+												DW_PARAM_BUHAR_UST_HIS_ADR,
+												DW_PARAM_BUHAR_ALT_HIS_ADR,
+												DW_PARAM_CIHAZ_TYPE_ADR,
+												DW_PARAM_LOGO_ADR,
+												DW_PARAM_TERMOKUPL_TYPE_ADR
+											};
 
-extern uint16_t registerTable[9000];
+extern uint16_t registerTable[REGISTER_TABLE_SIZE];
 
 EEPROM_writeResponse AT24C512_WaitForReady(I2C_HandleTypeDef *hi2c) {
 
@@ -220,9 +222,9 @@ EEPROM_initResponse EEPROM_init(I2C_HandleTypeDef *hi2c)
 
 	uint8_t usageCheck = 0;
 
-//	uint8_t eraseWrite = 0;
-//	EEPROM_Write(hi2c, EEPROM_USAGE_CHECK_ADDR, &eraseWrite, 1);
-//	HAL_Delay(0);
+	/*uint8_t eraseWrite = 0;
+	EEPROM_Write(hi2c, EEPROM_USAGE_CHECK_ADDR, &eraseWrite, 1);
+	HAL_Delay(0);*/
 
 	EEPROM_Read(hi2c, EEPROM_USAGE_CHECK_ADDR, &usageCheck, sizeof(usageCheck));
 
@@ -252,29 +254,32 @@ EEPROM_initResponse EEPROM_init(I2C_HandleTypeDef *hi2c)
 	{
 		EEPROM_writeResponse check;
 
-		registerTable[DW_UST_SICAKLIK_SET_ADR] 		= 200;
-		registerTable[DW_ALT_SICAKLIK_SET_ADR] 		= 200;
-		registerTable[DW_UST_ON_SET_ADR]			= 30;
-		registerTable[DW_UST_ARKA_SET_ADR] 			= 20;
-		registerTable[DW_ALT_SET_ADR] 				= 10;
-		registerTable[DW_PISIRME_SURESI_ADR]		= 40;
-		registerTable[DW_PISIRME_SURESI_ORT_ADR] 	= registerTable[DW_PISIRME_SURESI_ADR];
-		registerTable[DW_BUHAR_SURESI_ADR] 			= 30;
-		registerTable[DW_BUHAR_SURESI_ORT_ADR] 		= registerTable[DW_BUHAR_SURESI_ADR];
-		registerTable[DW_LAMBA_SURESI_ADR]			= 60;
-		registerTable[DW_UST_ON_ISITICI_BANDI_ADR]	= 50;
-		registerTable[DW_UST_ARKA_ISITICI_BANDI_ADR]= 50;
-		registerTable[DW_ALT_ISITICI_BANDI_ADR]		= 50;
-		registerTable[DW_ISITICI_UST_HIS_ADR]		= 0;
-		registerTable[DW_ISITICI_ALT_HIS_ADR]		= 0;
-		registerTable[DW_ISITICI_PERIOD_ADR]		= 60;
-		registerTable[DW_BUTTON_SOUND_ADR]			= 1;
-		registerTable[DW_BUHAR_ACTIVE_ADR] 			= 1;
+		registerTable[DW_UST_SICAKLIK_SET_ADR] 			= 200;
+		registerTable[DW_ALT_SICAKLIK_SET_ADR] 			= 200;
+		registerTable[DW_PISIRME_SURESI_ADR]			= 40;
+		registerTable[DW_PISIRME_SURESI_ORT_ADR] 		= registerTable[DW_PISIRME_SURESI_ADR];
+		registerTable[DW_BUHAR_SURESI_ADR] 				= 30;
+		registerTable[DW_BUHAR_SURESI_ORT_ADR] 			= registerTable[DW_BUHAR_SURESI_ADR];
+
+		registerTable[DW_PARAM_LAMBA_SURESI_ADR]		= 60;
+		registerTable[DW_PARAM_BUTTON_SOUND_ADR]		= 1;
+		registerTable[DW_PARAM_ALARM_ADR]				= 1;
+		registerTable[DW_PARAM_DIL_ADR]					= 0;
+		registerTable[DW_PARAM_PSW_ADR]					= DW_PARAMETRE_DEFAULT_PSW;
+		registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] 		= 1;
+		registerTable[DW_PARAM_BUHAR_SENSOR_TYPE_ADR] 	= DW_BUHAR_SENSOR_TAT_VAL;
+		registerTable[DW_PARAM_BUHAR_MAX_SET_ADR] 		= 0;
+		registerTable[DW_PARAM_BUHAR_HAZIR_SICAK_ADR] 	= 100;
+		registerTable[DW_PARAM_BUHAR_UST_HIS_ADR] 		= 0;
+		registerTable[DW_PARAM_BUHAR_ALT_HIS_ADR] 		= 0;
+		registerTable[DW_PARAM_CIHAZ_TYPE_ADR] 			= 1;
+		registerTable[DW_PARAM_LOGO_ADR] 				= 1;
+		registerTable[DW_PARAM_TERMOKUPL_TYPE_ADR]  	= DW_J_TYPE_TERMOKUP_VAL;
 
 		uint8_t usageWrite = EEPROM_USAGE_CHECK_VAL;
 		EEPROM_Write(hi2c, EEPROM_USAGE_CHECK_ADDR, &usageWrite, 1);
 
-		for(int i=0;i<sizeof(eepromAddrTable)/2;i++)
+		for(int i=0;i<EEPROM_TABLE_LEN;i++)
 		{
 			uint8_t writeData[2];
 
@@ -319,13 +324,32 @@ EEPROM_initResponse EEPROM_Recete_DefaultWrite(I2C_HandleTypeDef *hi2c)
 
 	EEPROM_writeResponse check;
 
-	uint8_t defaultRecete_isim[DW_RECETE_ISIM_SIZE] 		= {'N','o',' ','N','a','m','e',0,0,0,0,0,0,0,0,0,0,0,0,0};
-	uint16_t defaultRecete_data[EE_RECETE_DATA_SIZE/2] 		= {	200, 200, 10, 20, 30, 5, 25,
+	uint8_t defaultRecete_isim[DW_RECETE_ISIM_SIZE] 		= {0};
+	uint16_t defaultRecete_data[EE_RECETE_DATA_SIZE/2] 		= {200, 200, 10, 20, 30, 5, 25,
 																200, 200, 10, 20, 30, 6, 25,
 																200, 200, 10, 20, 30, 7, 25,
 																200, 200, 10, 20, 30, 8, 25,
 																0, 	 3
 																};
+
+	if(registerTable[DW_PARAM_DIL_ADR] == DW_DIL_RUSCA_VAL)
+	{
+		uint8_t isim[DW_RECETE_ISIM_SIZE] 		= {0x42,0x46,0x48,0x20,0x49,0x4D,0x46,0x4E,0x49,0,0,0,0,0,0,0,0,0,0,0};
+		for(int i=0;i<DW_RECETE_ISIM_SIZE;i++)
+			defaultRecete_isim[i] = isim[i];
+	}
+	else if(registerTable[DW_PARAM_DIL_ADR] != DW_DIL_ALMANCA_VAL)
+	{
+		uint8_t isim[DW_RECETE_ISIM_SIZE] 		= {'N','o',' ','N','a','m','e',0,0,0,0,0,0,0,0,0,0,0,0,0};
+		for(int i=0;i<DW_RECETE_ISIM_SIZE;i++)
+			defaultRecete_isim[i] = isim[i];
+	}
+	else
+	{
+		uint8_t isim[DW_RECETE_ISIM_SIZE] 		= {0x4B,0x45,0x49,0x4E,0x20,0x4E,0x41,0x4D,0x45,0,0,0,0,0,0,0,0,0,0,0};
+		for(int i=0;i<DW_RECETE_ISIM_SIZE;i++)
+			defaultRecete_isim[i] = isim[i];
+	}
 
 	uint8_t defaultRecete_data1_u8[EE_RECETE_DATA_SIZE];
 	uint8_t defaultRecete_data2_u8[EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE];
@@ -466,30 +490,8 @@ void EEPROM_OtomatikAcma_Read(I2C_HandleTypeDef *hi2c)
 
 		DWIN_writeRegiser(writeData, DW_OTOMATIK_ACMA_ILK_ADR + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(writeData));
 
-		if(defaultOtomatik_param_u16[(EE_OTOMATIK_ACMA_PARAM_SIZE/2)-3] == 1)
-		{
-			uint16_t oto_write = 0x0101;
-			DWIN_writeRegiser(&oto_write, 0x15A2 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
+		automaticOpeningVisualController(i+1, defaultOtomatik_param_u16[(EE_OTOMATIK_ACMA_PARAM_SIZE/2)-3], registerTable[DW_PARAM_CIHAZ_TYPE_ADR]);
 
-			oto_write = 0x1812;
-			DWIN_writeRegiser(&oto_write, 0x15A9 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
-			DWIN_writeRegiser(&oto_write, 0x15B6 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
-
-			oto_write = 0x0035;
-			DWIN_writeRegiser(&oto_write, 0x1595 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
-		}
-		else if(defaultOtomatik_param_u16[(EE_OTOMATIK_ACMA_PARAM_SIZE/2)-3] == 2)
-		{
-			uint16_t oto_write = 0x162C;
-			DWIN_writeRegiser(&oto_write, 0x15A2 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
-
-			oto_write = 0x0101;
-			DWIN_writeRegiser(&oto_write, 0x15A9 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
-			DWIN_writeRegiser(&oto_write, 0x15B6 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
-
-			oto_write = 0x003A;
-			DWIN_writeRegiser(&oto_write, 0x1595 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
-		}
 		if(defaultOtomatik_param_u16[(EE_OTOMATIK_ACMA_PARAM_SIZE/2)-2] == 0)
 		{
 			uint16_t oto_write = 0x003D;

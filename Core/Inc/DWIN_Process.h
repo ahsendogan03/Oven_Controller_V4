@@ -87,7 +87,15 @@ void DWIN_otomatikSayfa(void);
 void DWIN_otomatikAcmaCheck(void);
 void DWIN_otomatikPisirmeBaslatmaCheck(void);
 DWIN_Response DWIN_buzzerSet(uint8_t setLevel);
-DWIN_Response DWIN_dokunmatik_aktif_msg(void);
+DWIN_Response DWIN_dokunmatik_aktif(void);
 DWIN_Response DWIN_buharActivePassive(uint8_t setMode);
+void DWIN_testSayfa(void);
+void setAnalogVoltage(float target_voltage, uint32_t Channel);
+void PWM_StartSmoothTransition(uint32_t new_freq, uint8_t duty_percent);
+void PWM_SmoothTask_1ms(void);
+void automaticOpeningVisualController(uint8_t dayNumber, uint8_t mode, uint8_t tcCount);
+void DWIN_change_buhar_settings(uint16_t setVal);
+void DWIN_change_cihaz_type_settings(uint16_t setVal);
+void DWIN_tcVisualController(uint8_t mode);
 
 #endif /* INC_DWIN_PROCESS_H_ */

@@ -208,6 +208,7 @@ void SysTick_Handler(void)
   /* USER CODE BEGIN SysTick_IRQn 1 */
   avgAdcProcess();
   manual_pwm_update();
+  PWM_SmoothTask_1ms();
   STM32_RequestReadyCounter();
 
   if(counterTick.buharHazir < 100)

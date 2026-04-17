@@ -18,6 +18,8 @@
 #include "PID_Control.h"
 #include "hdc1080.h"
 #include "Bluetooth_Process.h"
+#include "tim.h"
+#include "dac.h"
 
 extern TemperatureData temp;
 extern uint8_t DWIN_rxBuffer[DWIN_rxBufferSize];
@@ -31,7 +33,9 @@ extern I2C_HandleTypeDef hi2c1;
 
 extern usartInfo DWIN;
 
-extern uint16_t eepromAddrTable[7];
+extern uint16_t eepromAddrTable[EEPROM_TABLE_LEN];
+
+extern uint32_t outputData;
 
 tickCounter counterTick;
 
@@ -66,6 +70,13 @@ uint16_t islemdekiOtomatikGun		= 0;
 uint16_t islemdekiOtomatikAktifIkon	= 0;
 
 uint8_t otomatikPisirmeBaslatmaFlag = 0;
+
+volatile uint32_t start_freq = 0;      // Geçiş başladığındaki frekans
+volatile uint32_t target_freq = 0;     // Hedeflenen frekans
+volatile uint32_t current_freq = 0;    // Anlık hesaplanan frekans
+volatile uint16_t tick_counter = 0;    // 0'dan 1000'e kadar sayacak
+volatile uint8_t  current_duty = 0;    // Sabit kalacak duty cycle
+volatile uint8_t  is_transitioning = 0; // Geçiş devam ediyor mu?
 
 static inline void UserApp_IWDG_Refresh(void)
 {
@@ -316,208 +327,968 @@ DWIN_Response DWIN_readRegister(uint8_t* pBuffer, uint16_t addr, uint8_t len)
 
 }
 
-void DWIN_changeMaxSetValue(uint16_t maxValue)
+void dwin_popup_change_structure(uint16_t page, uint8_t controlID, uint16_t picNext)
 {
-	HAL_Delay(20);
+	uint16_t tx[4];
 
-	for(int i=0;i<3;i++)
+
+	tx[0]=(uint16_t)(0x5A<<0x08)+(uint16_t)0xA5;
+	tx[1]=page;
+	tx[2]=(uint16_t)(controlID<<0x08)+0x01;
+	tx[3]=0x0002;
+
+	DWIN_writeRegiser(tx, 0x00b0, sizeof(tx));
+
+	HAL_Delay(50);
+
+	uint8_t readData[48] = {0};
+	DWIN_readRegister(readData, 0x00B4, sizeof(readData));
+
+	uint16_t data[28];
+
+	data[0]=(uint16_t)(0x5A<<0x08)+(uint16_t)0xA5;
+	data[1]=page;
+	data[2]=(uint16_t)(controlID<<0x08)+0x01;
+	data[3]=0x0003;
+
+	for(int i=0;i<sizeof(readData)/2;i++)
+		data[i+4] = combineBytes(readData[i*2], readData[(i*2)+1]);
+
+    data[14]=picNext;
+
+    DWIN_writeRegiser(data, 0x00b0, sizeof(data));
+
+    HAL_Delay(50);
+
+
+}
+
+void dwin_pop_up_change_all_structure(uint16_t popPage)
+{
+	for(int i=12; i<29; i++)
 	{
-		uint8_t txBuffer[48];
-		uint16_t addr = 0x00B0;
+		for(int j=0; j<6; j++)
+		{
+			if(i != 28)
+				dwin_popup_change_structure(i,(uint8_t)j,popPage);
+			else if(j<4)
+			{
+				dwin_popup_change_structure(i,(uint8_t)j,popPage);
+			}
 
-		txBuffer[0] = 0x5A;
-		txBuffer[1] = 0xA5;
-		txBuffer[2] = 0x2D;
-		txBuffer[3] = 0x82;
-
-		uint8_t highByte, lowByte;
-		highByte 	= (addr >> 8) & 0xFF;
-		lowByte 	= addr & 0xFF;
-
-		txBuffer[4] = highByte;
-		txBuffer[5] = lowByte;
-
-		txBuffer[6] 	= 0x5A;
-		txBuffer[7] 	= 0xA5;
-
-		txBuffer[8] 	= 0x00;
-		txBuffer[9] 	= 0x05+i;
-
-		txBuffer[10] 	= 0x01;
-		txBuffer[11] 	= 0x02;
-
-		txBuffer[12] 	= 0x00;
-		txBuffer[13] 	= 0x03;
-
-		txBuffer[14] 	= 0x00;
-		txBuffer[15] 	= 0x05+i;
-
-		txBuffer[16] 	= 0x02;
-		txBuffer[17] 	= 0x04;
-
-		txBuffer[18] 	= 0x02;
-		txBuffer[19] 	= 0x44;
-
-		txBuffer[20] 	= 0x02;
-		txBuffer[21] 	= 0x7F;
-
-		txBuffer[22] 	= 0x02;
-		txBuffer[23] 	= 0xC7;
-
-		txBuffer[24] 	= 0xFF;
-		txBuffer[25] 	= 0x00;
-
-		txBuffer[26] 	= 0xFF;
-		txBuffer[27] 	= 0x00;
-
-		txBuffer[28] 	= 0xFD;
-		txBuffer[29] 	= 0x02;
-
-		txBuffer[30] 	= 0xFE;
-
-		txBuffer[31] 	= 0x15;
-		txBuffer[32] 	= 0x5F+(i*2);
-
-		txBuffer[33] 	= 0x00;
-
-		txBuffer[34] 	= 0x01;
-
-		txBuffer[35] 	= 0x01;
-
-		txBuffer[36] 	= 0x00;
-		txBuffer[37] 	= 0x01;
-
-		txBuffer[38] 	= 0x00;
-		txBuffer[39] 	= 0x00;
-
-		highByte 		= (maxValue >> 8) & 0xFF;
-		lowByte 		= maxValue & 0xFF;
-
-		txBuffer[40] 	= highByte;
-		txBuffer[41] 	= lowByte;
-
-		txBuffer[42] 	= 0x00;
-		txBuffer[43] 	= 0x00;
-		txBuffer[44] 	= 0x00;
-		txBuffer[45] 	= 0x00;
-
-		uint8_t crcBuffer[43];
-
-		for(int i=3;i<46;i++)
-			crcBuffer[i-3] = txBuffer[i];
-
-		uint16_t crc = calculateCRC16Modbus(crcBuffer, sizeof(crcBuffer));
-
-		txBuffer[46] = crc & 0xFF;
-		txBuffer[47] = (crc >> 8) & 0xFF;
-
-
-		HAL_UART_Transmit_IT(DWIN_huart_channel, txBuffer, sizeof(txBuffer));
-
-		HAL_Delay(40);
+		}
 
 	}
+}
 
-	for(int i=0;i<3;i++)
+void DWIN_changePopup(uint16_t dil)
+{
+
+	switch(dil)
 	{
-		uint8_t txBuffer[48];
-		uint16_t addr = 0x00B0;
+		case DW_DIL_TURKCE_VAL:
+			dwin_pop_up_change_all_structure(11);
+		break;
+		case DW_DIL_INGILIZCE_VAL:
+			dwin_pop_up_change_all_structure(5);
+		break;
+		case DW_DIL_RUSCA_VAL:
+			dwin_pop_up_change_all_structure(6);
+		break;
+		case DW_DIL_ALMANCA_VAL:
+			dwin_pop_up_change_all_structure(104);
+		break;
+	}
+}
 
-		txBuffer[0] = 0x5A;
-		txBuffer[1] = 0xA5;
-		txBuffer[2] = 0x2D;
-		txBuffer[3] = 0x82;
+void dwin_icon_change_structure(uint16_t sp,uint16_t iconMin, uint16_t iconMax, uint16_t file)
+{
+	uint16_t writeData[3] = {iconMin, iconMax, file};
+	DWIN_writeRegiser(writeData, sp+0x05, sizeof(writeData));
+}
 
-		uint8_t highByte, lowByte;
-		highByte 	= (addr >> 8) & 0xFF;
-		lowByte 	= addr & 0xFF;
+void DWIN_changeIcon(uint16_t dil)
+{
+	switch(dil)
+	{
+		case DW_DIL_TURKCE_VAL:
 
-		txBuffer[4] = highByte;
-		txBuffer[5] = lowByte;
+			dwin_icon_change_structure( 0x4700, 0x0028, 0x0027, 0x3701);
 
-		txBuffer[6] 	= 0x5A;
-		txBuffer[7] 	= 0xA5;
+			dwin_icon_change_structure( 0x470A, 0x0000, 0x0001, 0x3701);
 
-		txBuffer[8] 	= 0x00;
-		txBuffer[9] 	= 0x05+i;
+			dwin_icon_change_structure( 0x4714, 0x0000, 0x0001, 0x3701);
 
-		txBuffer[10] 	= 0x00;
-		txBuffer[11] 	= 0x02;
+			dwin_icon_change_structure( 0x471E, 0x0028, 0x0027, 0x3701);
 
-		txBuffer[12] 	= 0x00;
-		txBuffer[13] 	= 0x03;
+			dwin_icon_change_structure( 0x4728, 0x0000, 0x0001, 0x3701);
 
-		txBuffer[14] 	= 0x00;
-		txBuffer[15] 	= 0x05+i;
+			dwin_icon_change_structure( 0x4732, 0x0000, 0x0001, 0x3701);
 
-		txBuffer[16] 	= 0x00;
-		txBuffer[17] 	= 0xA7;
+			dwin_icon_change_structure( 0x473C, 0x0000, 0x0000, 0x1E01);
 
-		txBuffer[18] 	= 0x02;
-		txBuffer[19] 	= 0x45;
+			dwin_icon_change_structure( 0x4746, 0x0000, 0x0001, 0x3701);
 
-		txBuffer[20] 	= 0x01;
-		txBuffer[21] 	= 0x22;
+			dwin_icon_change_structure( 0x4750, 0x0000, 0x0001, 0x3701);
 
-		txBuffer[22] 	= 0x02;
-		txBuffer[23] 	= 0xC8;
+			dwin_icon_change_structure( 0x475A, 0x0000, 0x0000, 0x1E01);
 
-		txBuffer[24] 	= 0xFF;
-		txBuffer[25] 	= 0x00;
+			dwin_icon_change_structure( 0x4764, 0x0000, 0x0001, 0x3701);
 
-		txBuffer[26] 	= 0xFF;
-		txBuffer[27] 	= 0x00;
+			dwin_icon_change_structure( 0x476E, 0x0000, 0x0000, 0x1E01);
 
-		txBuffer[28] 	= 0xFD;
-		txBuffer[29] 	= 0x02;
+			dwin_icon_change_structure( 0x4778, 0x0028, 0x0027, 0x3701);
 
-		txBuffer[30] 	= 0xFE;
+			dwin_icon_change_structure( 0x4782, 0x0000, 0x0001, 0x3701);
 
-		txBuffer[31] 	= 0x15;
-		txBuffer[32] 	= 0x5F+(i*2);
+			dwin_icon_change_structure( 0x478C, 0x0000, 0x0000, 0x1E01);
 
-		txBuffer[33] 	= 0x00;
+			dwin_icon_change_structure( 0x4796, 0x0000, 0x0001, 0x3701);
 
-		txBuffer[34] 	= 0x00;
+			dwin_icon_change_structure( 0x47A0, 0x0028, 0x0027, 0x3701);
 
-		txBuffer[35] 	= 0x01;
+			dwin_icon_change_structure( 0x47AA, 0x0000, 0x0001, 0x3701);
 
-		txBuffer[36] 	= 0x00;
-		txBuffer[37] 	= 0x01;
+			dwin_icon_change_structure( 0x47B4, 0x0000, 0x0001, 0x3701);
 
-		txBuffer[38] 	= 0x00;
-		txBuffer[39] 	= 0x00;
+			dwin_icon_change_structure( 0x47BE, 0x0000, 0x0001, 0x3701);
 
-		highByte 		= (maxValue >> 8) & 0xFF;
-		lowByte 		= maxValue & 0xFF;
+			dwin_icon_change_structure( 0x47C8, 0x0012, 0x0013, 0x3701);
 
-		txBuffer[40] 	= highByte;
-		txBuffer[41] 	= lowByte;
+			dwin_icon_change_structure( 0x47D2, 0x0012, 0x0013, 0x3701);
 
-		txBuffer[42] 	= 0x00;
-		txBuffer[43] 	= 0x00;
-		txBuffer[44] 	= 0x00;
-		txBuffer[45] 	= 0x00;
+			dwin_icon_change_structure( 0x47DC, 0x0012, 0x0013, 0x3701);
 
-		uint8_t crcBuffer[43];
+			dwin_icon_change_structure( 0x47E6, 0x002d, 0x002e, 0x3701);
 
-		for(int i=3;i<46;i++)
-			crcBuffer[i-3] = txBuffer[i];
+			dwin_icon_change_structure( 0x47F0, 0x0030, 0x002f, 0x3701);
 
-		uint16_t crc = calculateCRC16Modbus(crcBuffer, sizeof(crcBuffer));
+			dwin_icon_change_structure( 0x47FA, 0x0012, 0x0013, 0x3701);
 
-		txBuffer[46] = crc & 0xFF;
-		txBuffer[47] = (crc >> 8) & 0xFF;
+			dwin_icon_change_structure( 0x4804, 0x000B, 0x0011, 0X3700);
+
+			dwin_icon_change_structure( 0x480E, 0x0012, 0x0013, 0x3700);
+
+			dwin_icon_change_structure( 0x4818, 0x0012, 0x0013, 0x3700);
+
+			dwin_icon_change_structure( 0x4822, 0x0004, 0x0005, 0x3700);
+
+			dwin_icon_change_structure( 0x482C, 0x0004, 0x0006, 0X3700);
+
+			dwin_icon_change_structure( 0x4836, 0x0004, 0x0007, 0x3700);
+
+			dwin_icon_change_structure( 0x4840, 0x0004, 0x0008, 0x3700);
+
+			dwin_icon_change_structure( 0x484A, 0x0004, 0x0009, 0x3700);
+
+			dwin_icon_change_structure( 0x4854, 0x0004, 0x0025, 0x3700);
+
+			dwin_icon_change_structure( 0x485E, 0x000a, 0x000a, 0x3700);
 
 
-		HAL_UART_Transmit_IT(DWIN_huart_channel, txBuffer, sizeof(txBuffer));
 
-		HAL_Delay(40);
+			if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 1)
+			{
+				dwin_icon_change_structure( 0x4868, 0x0016, 0x0016, 0x3700);
 
+				dwin_icon_change_structure( 0x4872, 0x0016, 0x0016, 0X3700);
+
+				dwin_icon_change_structure( 0x487C, 0x0016, 0x0016, 0x3700);
+
+				dwin_icon_change_structure( 0x4886, 0x0016, 0x0016, 0x3700);
+
+				dwin_icon_change_structure( 0x4890, 0x0016, 0x0016, 0x3700);
+
+				dwin_icon_change_structure( 0x489A, 0x0016, 0x0016, 0x3700);
+
+				dwin_icon_change_structure( 0x48A4, 0x0016, 0x0016, 0x3700);
+			}
+			else
+			{
+				dwin_icon_change_structure(0x4868, 0x009F,0x009F, 0x3A01);
+
+				dwin_icon_change_structure(0x4872, 0x009F,0x009F, 0x3A01);
+
+				dwin_icon_change_structure(0x487C, 0x009F,0x009F, 0x3A01);
+
+				dwin_icon_change_structure(0x4886, 0x009F,0x009F, 0x3A01);
+
+				dwin_icon_change_structure(0x4890, 0x009F,0x009F, 0x3A01);
+
+				dwin_icon_change_structure(0x489A, 0x009F,0x009F, 0x3A01);
+
+				dwin_icon_change_structure(0x48A4, 0x009F,0x009F, 0x3A01);
+
+			}
+
+			dwin_icon_change_structure( 0x48AE, 0x003a, 0x003a, 0x3701);
+
+			dwin_icon_change_structure(0x5000,0x009A,0x009A,0x3A01);
+
+			dwin_icon_change_structure(0x500A, 0x0094, 0x0094, 0x3A01);
+
+			dwin_icon_change_structure(0x5014, 0x0097, 0x0097, 0x3A01);
+
+			dwin_icon_change_structure( 0x501E, 0x003D, 0x003D, 0x3701);
+
+			dwin_icon_change_structure( 0x5028, 0x0040, 0x0040, 0x3701);
+
+
+		break;
+
+		case DW_DIL_INGILIZCE_VAL:
+
+			dwin_icon_change_structure(0x4700, 0x0061, 0x0069, 0x3A01);
+
+			dwin_icon_change_structure(0x470A, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure(0x4714, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure(0x471E, 0x0061, 0x0069, 0x3A01);
+
+			dwin_icon_change_structure(0x4728, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure(0x4732, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure(0x473C, 0x005E, 0x005E, 0x3A01);
+
+			dwin_icon_change_structure(0x4746, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure(0x4750, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure(0x475A, 0x005E, 0x005E, 0x3A01);
+
+			dwin_icon_change_structure(0x4764, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure(0x476E, 0x005E, 0x005E, 0x3A01);
+
+			dwin_icon_change_structure(0x4778, 0x0061, 0x0069, 0x3A01);
+
+			dwin_icon_change_structure(0x4782, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure(0x478C, 0x005E, 0x005E, 0x3A01);
+
+			dwin_icon_change_structure(0x4796, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure(0x47A0, 0x0061, 0x0069, 0x3A01);
+
+			dwin_icon_change_structure(0x47AA, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure(0x47B4, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure(0x47BE, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure(0x47C8, 0x0012, 0x0013, 0x3701);
+
+			dwin_icon_change_structure(0x47D2, 0x0012, 0x0013, 0x3701);
+
+			dwin_icon_change_structure(0x47DC, 0x0012, 0x0013, 0x3701);
+
+			dwin_icon_change_structure(0x47E6, 0x0063, 0x0065, 0x3a01);
+
+			dwin_icon_change_structure(0x47F0, 0x0067, 0x008f, 0x3a01);
+
+			dwin_icon_change_structure(0x47FA, 0x0012, 0x0013, 0x3701);
+
+			dwin_icon_change_structure(0x4804, 0X007B, 0X0081, 0x3A01);
+
+			dwin_icon_change_structure(0x480E, 0x0012, 0x0013, 0x3700);
+
+			dwin_icon_change_structure(0x4818, 0x0012, 0x0013, 0x3700);
+
+			dwin_icon_change_structure(0x4822, 0x0091, 0x006e, 0x3A00);
+
+			dwin_icon_change_structure(0x482C, 0x0091, 0x006f, 0x3A00);
+
+			dwin_icon_change_structure(0x4836, 0x0091, 0x0070, 0x3A00);
+
+			dwin_icon_change_structure(0x4840, 0x0091, 0x0071, 0x3A00);
+
+			dwin_icon_change_structure(0x484A, 0x0091, 0x0072, 0x3A00);
+
+			dwin_icon_change_structure(0x4854, 0x0091, 0x0073, 0x3A00);
+
+			dwin_icon_change_structure(0x485E, 0x006c, 0x006c, 0x3A00);
+
+			if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 1)
+			{
+				dwin_icon_change_structure(0x4868, 0x0089, 0x0089, 0x3A00);
+
+				dwin_icon_change_structure(0x4872, 0x0089, 0x0089, 0x3A00);
+
+				dwin_icon_change_structure(0x487C, 0x0089, 0x0089, 0x3A00);
+
+				dwin_icon_change_structure(0x4886, 0x0089, 0x0089, 0x3A00);
+
+				dwin_icon_change_structure(0x4890, 0x0089, 0x0089, 0x3A00);
+
+				dwin_icon_change_structure(0x489A, 0x0089, 0x0089, 0x3A00);
+
+				dwin_icon_change_structure(0x48A4, 0x0089, 0x0089, 0x3A00);
+
+			}
+			else
+			{
+					dwin_icon_change_structure(0x4868, 0x009D,0x009D, 0x3A01);
+
+					dwin_icon_change_structure(0x4872, 0x009D,0x009D, 0x3A01);
+
+					dwin_icon_change_structure(0x487C, 0x009D,0x009D, 0x3A01);
+
+					dwin_icon_change_structure(0x4886, 0x009D,0x009D, 0x3A01);
+
+					dwin_icon_change_structure(0x4890, 0x009D,0x009D, 0x3A01);
+
+					dwin_icon_change_structure(0x489A, 0x009D,0x009D, 0x3A01);
+
+					dwin_icon_change_structure(0x48A4, 0x009D,0x009D, 0x3A01);
+			}
+
+
+
+			dwin_icon_change_structure(0x48AE, 0x003b, 0x003b, 0x3701);
+
+
+			dwin_icon_change_structure(0x5000, 0x009B, 0x009B, 0x3A01);
+
+			dwin_icon_change_structure(0x500A, 0x0095, 0x0095, 0x3A01);
+
+			dwin_icon_change_structure(0x5014, 0x0098, 0x0098, 0x3A01);
+
+			dwin_icon_change_structure( 0x501E, 0x003E, 0x003E, 0x3701);
+
+			dwin_icon_change_structure( 0x5028, 0x0041, 0x0041, 0x3701);
+
+
+
+		break;
+
+		case DW_DIL_RUSCA_VAL:
+
+			dwin_icon_change_structure( 0x4700, 0x0062, 0x0060, 0x3A01);
+
+			dwin_icon_change_structure( 0x470A, 0x00C8, 0x007A, 0x3A01);
+
+			dwin_icon_change_structure( 0x4714, 0x00C8, 0x007A, 0x3A01);
+
+			dwin_icon_change_structure( 0x471E, 0x0062, 0x0060, 0x3A01);
+
+			dwin_icon_change_structure( 0x4728, 0x00C8, 0x007A, 0x3A01);
+
+			dwin_icon_change_structure( 0x4732, 0x00C8, 0x007A, 0x3A01);
+
+			dwin_icon_change_structure( 0x473C, 0x005F, 0x005F, 0x3A01);
+
+			dwin_icon_change_structure( 0x4746, 0x00C8, 0x007A, 0x3A01);
+
+			dwin_icon_change_structure( 0x4750, 0x00C8, 0x007A, 0x3A01);
+
+			dwin_icon_change_structure( 0x475A, 0x005F, 0x005F, 0x3A01);
+
+			dwin_icon_change_structure( 0x4764, 0x00C8, 0x007A, 0x3A01);
+
+			dwin_icon_change_structure( 0x476E, 0x005F, 0x005F, 0x3A01);
+
+			dwin_icon_change_structure( 0x4778, 0x0062, 0x0060, 0x3A01);
+
+			dwin_icon_change_structure( 0x4782, 0x00C8, 0x007A, 0x3A01);
+
+			dwin_icon_change_structure( 0x478C, 0x005F, 0x005F, 0x3A01);
+
+			dwin_icon_change_structure( 0x4796, 0x00C8, 0x007A, 0x3A01);
+
+			dwin_icon_change_structure( 0x47A0, 0x0062, 0x0060, 0x3A01);
+
+			dwin_icon_change_structure( 0x47AA, 0x00C8, 0x007A, 0x3A01);
+
+			dwin_icon_change_structure( 0x47B4, 0x00C8, 0x007A, 0x3A01);
+
+			dwin_icon_change_structure( 0x47BE, 0x00C8, 0x007A, 0x3A01);
+
+			dwin_icon_change_structure( 0x47C8, 0x006a, 0x006b, 0x3A01);
+
+			dwin_icon_change_structure( 0x47D2, 0x006a, 0x006b, 0x3A01);
+
+			dwin_icon_change_structure( 0x47DC, 0x006a, 0x006b, 0x3A01);
+
+			dwin_icon_change_structure( 0x47E6, 0x0064, 0x0066, 0x3A01);
+
+			dwin_icon_change_structure( 0x47F0, 0x0068, 0x0090, 0x3a01);
+
+			dwin_icon_change_structure( 0x47FA, 0x006a, 0x006b, 0x3A01);
+
+			dwin_icon_change_structure( 0x4804, 0X0082, 0X0088, 0x3A01);
+
+			dwin_icon_change_structure( 0x480E, 0x006b, 0x006a, 0x3A00);
+
+			dwin_icon_change_structure( 0x4818, 0x006b, 0x006a, 0x3A00);
+
+			dwin_icon_change_structure( 0x4822, 0x0091, 0x0074, 0x3A00);
+
+			dwin_icon_change_structure( 0x482C, 0x0091, 0x0075, 0x3A00);
+
+			dwin_icon_change_structure( 0x4836, 0x0091, 0x0076, 0x3A00);
+
+			dwin_icon_change_structure( 0x4840, 0x0091, 0x0077, 0x3A00);
+
+			dwin_icon_change_structure( 0x484A, 0x0091, 0x0078, 0x3A00);
+
+			dwin_icon_change_structure( 0x4854, 0x0091, 0x0079, 0x3A00);
+
+			dwin_icon_change_structure( 0x485E, 0x006d, 0x006d, 0x3A00);
+
+			if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 1) //if dual temperature control is active, change the icons to match the dual temperature control mode
+			{
+				dwin_icon_change_structure( 0x4868, 0x008a, 0x008a, 0x3A00);
+
+				dwin_icon_change_structure( 0x4872, 0x008a, 0x008a, 0x3A00);
+
+				dwin_icon_change_structure( 0x487C, 0x008a, 0x008a, 0x3A00);
+
+				dwin_icon_change_structure( 0x4886, 0x008a, 0x008a, 0x3A00);
+
+				dwin_icon_change_structure( 0x4890, 0x008a, 0x008a, 0x3A00);
+
+				dwin_icon_change_structure( 0x489A, 0x008a, 0x008a, 0x3A00);
+
+				dwin_icon_change_structure( 0x48A4, 0x008a, 0x008a, 0x3A00);
+			}
+			else
+			{
+				dwin_icon_change_structure(0x4868, 0x009e,0x009e, 0x3A01);
+
+				dwin_icon_change_structure(0x4872, 0x009e,0x009e, 0x3A01);
+
+				dwin_icon_change_structure(0x487C, 0x009e,0x009e, 0x3A01);
+
+				dwin_icon_change_structure(0x4886, 0x009e,0x009e, 0x3A01);
+
+				dwin_icon_change_structure(0x4890, 0x009e,0x009e, 0x3A01);
+
+				dwin_icon_change_structure(0x489A, 0x009e,0x009e, 0x3A01);
+
+				dwin_icon_change_structure(0x48A4, 0x009e,0x009e, 0x3A01);
+			}
+
+
+
+			dwin_icon_change_structure( 0x48AE, 0x003c, 0x003c, 0x3701);
+
+			dwin_icon_change_structure(0x5000, 0x009C, 0x009C, 0x3A01);
+
+			dwin_icon_change_structure(0x500A, 0x0096, 0x0096, 0x3A01);
+
+			dwin_icon_change_structure(0x5014, 0x0099, 0x0099, 0x3A01);
+
+			dwin_icon_change_structure( 0x501E, 0x003F, 0x003F, 0x3701);
+
+			dwin_icon_change_structure( 0x5028, 0x0042, 0x0042, 0x3701);
+
+
+
+		break;
+
+		case DW_DIL_ALMANCA_VAL:
+
+			dwin_icon_change_structure( 0x4700, 0x002E, 0x002D, 0x3E01);
+
+			dwin_icon_change_structure( 0x470A, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure( 0x4714, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure( 0x471E, 0x002E, 0x002D, 0x3E01);
+
+			dwin_icon_change_structure( 0x4728, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure( 0x4732, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure( 0x473C, 0x002C, 0x002C, 0x3E01);
+
+			dwin_icon_change_structure( 0x4746, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure( 0x4750, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure( 0x475A, 0x002C, 0x002C, 0x3E01);
+
+			dwin_icon_change_structure( 0x4764, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure( 0x476E, 0x002C, 0x002C, 0x3E01);
+
+			dwin_icon_change_structure( 0x4778, 0x002E, 0x002D, 0x3E01);
+
+			dwin_icon_change_structure( 0x4782, 0x0000, 0x0001, 0x3701);
+
+			dwin_icon_change_structure( 0x478C, 0x002C, 0x002C, 0x3E01);
+
+			dwin_icon_change_structure( 0x47C8, 0x0033, 0x0034, 0x3E00);
+
+			dwin_icon_change_structure( 0x47D2, 0x0033, 0x0034, 0x3E00);
+
+			dwin_icon_change_structure( 0x47DC, 0x0033, 0x0034, 0x3E00);
+
+			dwin_icon_change_structure( 0x47E6, 0x002F, 0x0030, 0x3E01);
+
+			dwin_icon_change_structure( 0x47F0, 0x0031, 0x0032, 0x3E01);
+
+			dwin_icon_change_structure( 0x47FA, 0x0033, 0x0034, 0x3E00);
+
+			dwin_icon_change_structure( 0x4796, 0x0000, 0x0001, 0x3701);
+
+
+			dwin_icon_change_structure( 0x47A0, 0x002E, 0x002D, 0x3E01);
+
+			dwin_icon_change_structure( 0x4822, 0x0046, 0x0036, 0x3E01);
+
+			dwin_icon_change_structure( 0x482C, 0x0046, 0x0037, 0x3E01);
+
+			dwin_icon_change_structure( 0x4836, 0x0046, 0x0038, 0x3E01);
+
+			dwin_icon_change_structure( 0x4840, 0x0046, 0x0039, 0x3E01);
+
+			dwin_icon_change_structure( 0x484A, 0x0046, 0x003B, 0x3E01);
+
+			dwin_icon_change_structure( 0x4854, 0x0046, 0x003A, 0x3E01);
+
+			dwin_icon_change_structure( 0x485E, 0x0035, 0x0035, 0x3E01);
+
+			if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 1) //if dual temperature control is active, change the icons to match the dual temperature control mode
+			{
+				dwin_icon_change_structure( 0x4868, 0x004B, 0x004B, 0x3E01);
+
+				dwin_icon_change_structure( 0x4872, 0x004B, 0x004B, 0x3E01);
+
+				dwin_icon_change_structure( 0x487C, 0x004B, 0x004B, 0x3E01);
+
+				dwin_icon_change_structure( 0x4886, 0x004B, 0x004B, 0x3E01);
+
+				dwin_icon_change_structure( 0x4890, 0x004B, 0x004B, 0x3E01);
+
+				dwin_icon_change_structure( 0x489A, 0x004B, 0x004B, 0x3E01);
+
+				dwin_icon_change_structure( 0x48A4, 0x004B, 0x004B, 0x3E01);
+
+
+
+
+			}
+			else
+			{
+				dwin_icon_change_structure( 0x4868, 0x0043, 0x0043, 0x3E01);
+				dwin_icon_change_structure( 0x4872, 0x0043, 0x0043, 0x3E01);
+				dwin_icon_change_structure( 0x487C, 0x0043, 0x0043, 0x3E01);
+				dwin_icon_change_structure( 0x4886, 0x0043, 0x0043, 0x3E01);
+				dwin_icon_change_structure( 0x4890, 0x0043, 0x0043, 0x3E01);
+				dwin_icon_change_structure( 0x489A, 0x0043, 0x0043, 0x3E01);
+				dwin_icon_change_structure( 0x48A4, 0x0043, 0x0043, 0x3E01);
+
+			}
+
+			dwin_icon_change_structure( 0x48AE, 0x0047, 0x0047, 0x3E01);
+
+			dwin_icon_change_structure( 0x5000, 0x004A, 0x004A, 0x3E01);
+
+			dwin_icon_change_structure( 0x4804, 0x003C, 0x0042, 0x3E01);
+
+			dwin_icon_change_structure( 0x480E, 0x0033, 0x0034, 0x3E00);
+
+			dwin_icon_change_structure( 0x4818, 0x0033, 0x0034, 0x3E00);
+
+			dwin_icon_change_structure(0x500A, 0x0095, 0x0095, 0x3A01);
+
+			dwin_icon_change_structure(0x5014, 0x0098, 0x0098, 0x3A01);
+
+			dwin_icon_change_structure( 0x501E, 0x004F, 0x004F, 0x3E01);
+
+			dwin_icon_change_structure( 0x5028, 0x0043, 0x0043, 0x3701);
+
+
+		break;
+	}
+}
+
+
+
+void keyboard_change_structure(uint16_t page,uint8_t touchID, uint8_t libID, uint8_t xDots, uint8_t yDots, uint8_t picture)
+{
+	uint16_t tx[4];
+
+	tx[0]=0x5AA5;
+	tx[1]=page;
+	tx[2]=(uint16_t)(touchID<<0x08)+0x06;
+	tx[3]=0x0002;
+
+	DWIN_writeRegiser(tx, 0x00b0, sizeof(tx));
+	HAL_Delay(50);
+
+	uint8_t readData[64] = {0};
+	DWIN_readRegister(readData, 0x00B4, sizeof(readData));
+
+
+	uint16_t data[36];
+
+	data[0]=0x5AA5;
+	data[1]=page;
+	data[2]=(uint16_t)(touchID<<0x08)+0x06;
+	data[3]=0x0003;
+
+	for(int i=0;i<sizeof(readData)/2;i++)
+		data[i+4] = combineBytes(readData[i*2], readData[(i*2)+1]);
+
+    data[0xa+0x04]=(data[0x0a+0x04] & 0xff00) | (uint16_t)(libID);
+    data[0xb+0x04]=(uint16_t)(xDots<<0x08) | (uint16_t)(yDots);
+    data[0x13+0x04]=(data[0x13+0x04] & 0xFf00) | (uint16_t)(picture);
+
+
+    DWIN_writeRegiser(data, 0x00b0, sizeof(data));
+
+    HAL_Delay(50);
+
+}
+
+void returnkeycode_change_structure(uint16_t picNext) //bu fonksiyon sadece tek bir tuş için geçerlidir
+										//genel bir fonksiyon değildir
+{
+	uint16_t tx[4];
+
+	tx[0]=0x5AA5;
+	tx[1]=0000;
+	tx[2]=0x0005;
+	tx[3]=0x0002;
+
+
+	DWIN_writeRegiser(tx, 0x00b0, sizeof(tx));
+	HAL_Delay(50);
+
+	uint8_t readData[34] = {0};
+	DWIN_readRegister(readData, 0x00B4, sizeof(readData));
+
+	uint16_t data[21];
+
+	data[0]=0x5AA5;
+	data[1]=0x0000;
+	data[2]=0005;
+	data[3]=0x0003;
+
+	for(int i=0;i<sizeof(readData)/2;i++)
+		data[i+4] = combineBytes(readData[i*2], readData[(i*2)+1]);
+
+
+    data[9]=picNext;
+
+    DWIN_writeRegiser(data, 0x00b0, sizeof(data));
+
+    HAL_Delay(50);
+}
+
+void DWIN_changeKeyboard(uint16_t dil)
+{
+	if(dil == DW_DIL_RUSCA_VAL)
+	{
+		keyboard_change_structure(0x001D,0x03,0x0B,0x32,0x46,0x63);
+		HAL_Delay(100);
+		keyboard_change_structure(0x001E,0x03,0x0B,0x32,0x46,0x63);
+		HAL_Delay(100);
+		keyboard_change_structure(0x001F,0x03,0x0B,0x32,0x46,0x63);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0020,0x03,0x0B,0x32,0x46,0x63);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0021,0x03,0x0B,0x32,0x46,0x63);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0022,0x03,0x0B,0x32,0x46,0x63);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0023,0x03,0x0B,0x32,0x46,0x63);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0024,0x03,0x0B,0x32,0x46,0x63);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0025,0x03,0x0B,0x32,0x46,0x63);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0026,0x03,0x0B,0x32,0x46,0x63);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0062,0x00,0x0B,0x32,0x46,0x63);
+		HAL_Delay(100);
+	}
+	else if(dil != DW_DIL_ALMANCA_VAL)
+	{
+		keyboard_change_structure(0x001D,0x03,0x0f,0x23,0x46,0x27); //prescription edit
+		HAL_Delay(100);
+        keyboard_change_structure(0x001E,0x03,0x0f,0x23,0x46,0x27);
+        HAL_Delay(100);
+        keyboard_change_structure(0x001F,0x03,0x0f,0x23,0x46,0x27);
+        HAL_Delay(100);
+        keyboard_change_structure(0x0020,0x03,0x0f,0x23,0x46,0x27);
+        HAL_Delay(100);
+        keyboard_change_structure(0x0021,0x03,0x0f,0x23,0x46,0x27);
+        HAL_Delay(100);
+        keyboard_change_structure(0x0022,0x03,0x0f,0x23,0x46,0x27);
+        HAL_Delay(100);
+        keyboard_change_structure(0x0023,0x03,0x0f,0x23,0x46,0x27);
+        HAL_Delay(100);
+        keyboard_change_structure(0x0024,0x03,0x0f,0x23,0x46,0x27);
+        HAL_Delay(100);
+        keyboard_change_structure(0x0025,0x03,0x0f,0x23,0x46,0x27);
+        HAL_Delay(100);
+        keyboard_change_structure(0x0026,0x03,0x0f,0x23,0x46,0x27);
+        HAL_Delay(100);
+
+        keyboard_change_structure(0x0062,0x00,0x0f,0x23,0x46,0x27); //bt name edit
+        HAL_Delay(100);
+	}
+	else // almanca
+	{
+		keyboard_change_structure(0x001D,0x03,0x04,0x32,0x46,0x69);
+		HAL_Delay(100);
+		keyboard_change_structure(0x001E,0x03,0x04,0x32,0x46,0x69);
+		HAL_Delay(100);
+		keyboard_change_structure(0x001F,0x03,0x04,0x32,0x46,0x69);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0020,0x03,0x04,0x32,0x46,0x69);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0021,0x03,0x04,0x32,0x46,0x69);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0022,0x03,0x04,0x32,0x46,0x69);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0023,0x03,0x04,0x32,0x46,0x69);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0024,0x03,0x04,0x32,0x46,0x69);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0025,0x03,0x04,0x32,0x46,0x69);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0026,0x03,0x04,0x32,0x46,0x69);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0062,0x00,0x04,0x32,0x46,0x69);
+		HAL_Delay(100);
 	}
 
-	memset(DWIN_rxBuffer,0,sizeof(DWIN_rxBuffer));
-	DWIN.rxDoneFlag = 0;
+
+}
+
+void DWIN_changeWord(uint16_t dil)
+{
+	switch(dil)
+	{
+		case DW_DIL_TURKCE_VAL:
+
+			for(int i=0; i<100; i++) //dish names
+			{
+				DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x4000+((i*0x0D)+0x09),4);
+			}
+
+			DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x4514 + 0x09,4); //prescription edit name
+
+			DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x4521 + 0x09,4); //cooking situation names
+			DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x452E + 0x09,4);
+			DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x4548 + 0x09,4);
+
+			//DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x453B+0x09,4);  //bt name
+
+			for(int i=0; i<7; i++) //automatic opening names
+			{
+				DWIN_writeRegiser((uint16_t[]){0x0F0F,0x1428},0x1598+((i*0x3B)+0x09),4);
+			}
+
+			//DWIN_writeRegiser(noName_u16,0x17c0,sizeof(noName_u16)); //bt isim
+
+
+		break;
+
+		case DW_DIL_INGILIZCE_VAL:
+
+			for(int i=0; i<100; i++) //dish names
+			{
+				DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x4000+((i*0x0D)+0x09),4);
+			}
+
+			DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x4514 + 0x09,4); //prescription edit name
+
+			DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x4521 + 0x09,4); //cooking situation names
+			DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x452E + 0x09,4);
+			DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x4548 + 0x09,4);
+
+			//DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x453B+0x09,4); //bt name
+
+			for(int i=0; i<7; i++) //automatic opening names
+			{
+				DWIN_writeRegiser((uint16_t[]){0x0F0F,0x1428},0x1598+((i*0x3B)+0x09),4);
+			}
+
+			//DWIN_writeRegiser(noName_u16,0x17c0,sizeof(noName_u16)); 	//bt isim
+
+
+		break;
+
+		case DW_DIL_RUSCA_VAL:
+
+			for(int i=0; i<100; i++) //dish names
+			{
+				DWIN_writeRegiser((uint16_t[]){0x0B0B,0x3246},0x4000+((i*0x0D)+0x09),4);
+			}
+
+			DWIN_writeRegiser((uint16_t[]){0x0B0B,0x3246},0x4514+0x09,4); //prescription edit name
+
+			DWIN_writeRegiser((uint16_t[]){0x0B0B,0x3246},0x4521 + 0x09,4); //cooking situation names
+			DWIN_writeRegiser((uint16_t[]){0x0B0B,0x3246},0x452E + 0x09,4);
+			DWIN_writeRegiser((uint16_t[]){0x0B0B,0x3246},0x4548 + 0x09,4);
+
+			//DWIN_writeRegiser((uint16_t[]){0x0B0B,0x3246},0x453B+0x09,4); //bt name
+
+			for(int i=0; i<7; i++) //automatic opening names
+			{
+				DWIN_writeRegiser((uint16_t[]){0x0606,0x1E28},0x1598+((i*0x3B)+0x09),4);
+			}
+
+			//DWIN_writeRegiser(0x17c0,Без_Имени_u16,10); //bt isim
+
+		break;
+
+		case DW_DIL_ALMANCA_VAL:
+
+
+			for(int i=0; i<100; i++) //dish names
+			{
+				DWIN_writeRegiser((uint16_t[]){0x0404,0x3246},0x4000+((i*0x0D)+0x09),4);
+			}
+
+			DWIN_writeRegiser((uint16_t[]){0x4B04,0x3246},0x4514+0x09,4); //prescription edit name
+
+			DWIN_writeRegiser((uint16_t[]){0x0404,0x3246},0x4521 + 0x09,4); //cooking situation names
+			DWIN_writeRegiser((uint16_t[]){0x0404,0x3246},0x452E + 0x09,4);
+			DWIN_writeRegiser((uint16_t[]){0x0404,0x3246},0x4548 + 0x09,4);
+
+			//DWIN_writeRegiser((uint16_t[]){0x0404,0x3246},0x453B+0x09,4); //bt name
+
+			for(int i=0; i<7; i++) //automatic opening names
+			{
+				DWIN_writeRegiser((uint16_t[]){0x0303,0x1E28},0x1598+((i*0x3B)+0x09),4);
+			}
+
+			//DWIN_writeRegiser(0x17c0,Без_Имени_u16,10); //bt isim
+
+
+		break;
+	}
+}
+
+void dwin_anim_change_structure(uint16_t sp, uint16_t animStop, uint16_t animStart, uint16_t animEnd, uint16_t file)
+{
+	uint16_t data[4] = {animStop, animStart, animEnd, file};
+	DWIN_writeRegiser(data, sp + 0x06, sizeof(data));
+}
+
+void DWIN_changeAnim(uint16_t dil)
+{
+	switch(dil)
+	{
+		case DW_DIL_TURKCE_VAL:
+			dwin_anim_change_structure(0x48B8,0x00C8,0x0002,0x0003,0x3701);
+			dwin_anim_change_structure( 0x48C5,0x00C8, 0x0002, 0x0003, 0x3701);
+			dwin_anim_change_structure( 0x48D2,0x00C8, 0x0002, 0x0003, 0x3701);
+			dwin_anim_change_structure( 0x48DF,0x00C8, 0x0002, 0x0003, 0x3701);
+			dwin_anim_change_structure( 0x48EC,0x00C8, 0x0002, 0x0003, 0x3701);
+			dwin_anim_change_structure( 0x48F9,0x00C8, 0x0002, 0x0003, 0x3701);
+			dwin_anim_change_structure( 0x4906,0x00C8, 0x0002, 0x0003, 0x3701);
+			dwin_anim_change_structure( 0x4913,0x00C8, 0x0002, 0x0003, 0x3701);
+		break;
+
+		case DW_DIL_INGILIZCE_VAL:
+			dwin_anim_change_structure(0x48B8,0x00C8,0x008b,0x008c,0x3a01);
+			dwin_anim_change_structure(0x48C5, 0x00C8, 0x008B, 0x008C, 0x3A01);
+			dwin_anim_change_structure( 0x48D2,0x00C8, 0x008D, 0x008E, 0x3A01);
+			dwin_anim_change_structure( 0x48DF,0x00C8, 0x008D, 0x008E, 0x3A01);
+			dwin_anim_change_structure( 0x48EC,0x00C8, 0x008D, 0x008E, 0x3A01);
+			dwin_anim_change_structure(0x48F9, 0x00C8, 0x008B, 0x008C, 0x3A01);
+			dwin_anim_change_structure(0x4906, 0x00C8, 0x008B, 0x008C, 0x3A01);
+			dwin_anim_change_structure(0x4913, 0x00C8, 0x008B, 0x008C, 0x3A01);
+		break;
+		case DW_DIL_RUSCA_VAL:
+			dwin_anim_change_structure(0x48B8,0x00C8,0x008D,0x008E,0x3a01);
+			dwin_anim_change_structure( 0x48C5,0x00C8, 0x008D, 0x008E, 0x3A01);
+			dwin_anim_change_structure( 0x48D2,0x00C8, 0x008D, 0x008E, 0x3A01);
+			dwin_anim_change_structure( 0x48DF,0x00C8, 0x0002, 0x0003, 0x3701);
+			dwin_anim_change_structure( 0x48DF,0x00C8, 0x0002, 0x0003, 0x3701);
+			dwin_anim_change_structure( 0x48F9,0x00C8, 0x008D, 0x008E, 0x3A01);
+			dwin_anim_change_structure( 0x4906,0x00C8, 0x008D, 0x008E, 0x3A01);
+			dwin_anim_change_structure( 0x4913,0x00C8, 0x008D, 0x008E, 0x3A01);
+		break;
+		case DW_DIL_ALMANCA_VAL:
+			dwin_anim_change_structure(0x48B8,0x00C8,0x0044,0x0045,0x3E01);
+			dwin_anim_change_structure(0x48C5,0x00C8,0x0044,0x0045,0x3E01);
+			dwin_anim_change_structure(0x48D2,0x00C8,0x0044,0x0045,0x3E01);
+			dwin_anim_change_structure(0x48DF,0x00C8,0x0044,0x0045,0x3E01);
+			dwin_anim_change_structure(0x48EC,0x00C8,0x0044,0x0045,0x3E01);
+			dwin_anim_change_structure(0x48F9,0x00C8,0x0044,0x0045,0x3E01);
+			dwin_anim_change_structure(0x4906,0x00C8,0x0044,0x0045,0x3E01);
+			dwin_anim_change_structure(0x4913,0x00C8,0x0044,0x0045,0x3E01);
+		break;
+	}
+}
+
+void DWIN_tcVisualController(uint8_t mode)
+{
+	uint16_t dataTx[1];
+	uint8_t dataRx[2];
+	uint16_t temporaryValue;
+
+	if(mode==1) //dual tc
+	{
+		for(int i=0; i<7; i++)
+		{
+			DWIN_readRegister(dataRx,0x1595+i*(0x3B),2);
+			temporaryValue = (dataRx[0]<<8) | dataRx[1];
+			if(temporaryValue==0x0035)
+			{
+				dataTx[0]=0x1587+(i*0x3B);
+				DWIN_writeRegiser(dataTx, 0x15B2+(i*0x3B), sizeof(dataTx));
+			}
+
+		}
+	}
+	else if (mode == 0)  //single tc
+	{
+		for(int i=0; i<7; i++)
+		{
+			DWIN_readRegister(dataRx,0x1595+i*(0x3B),2);
+			temporaryValue = (dataRx[0]<<8) | dataRx[1];
+			if(temporaryValue==0x0035)
+			{
+				dataTx[0]=0xFF00;
+				DWIN_writeRegiser(dataTx, 0x15B2+(i*0x3B), sizeof(dataTx));
+			}
+		}
+
+	}
+	else
+	{
+		return;
+	}
+}
+
+
+
+void DWIN_dilChange(void)
+{
+	uint16_t writeData = registerTable[DW_PARAM_DIL_ADR];
+	DWIN_writeRegiser(&writeData, DW_DIL_SABIT_YAZI_ADR, sizeof(writeData));
+
+	if(registerTable[DW_PARAM_DIL_ADR] == DW_DIL_ALMANCA_VAL)
+	{
+		writeData = 1;
+		DWIN_writeRegiser(&writeData, 0x843B, sizeof(writeData));
+	}
+	else
+	{
+		writeData = 0;
+		DWIN_writeRegiser(&writeData, 0x843B, sizeof(writeData));
+	}
+
+	DWIN_changePopup(registerTable[DW_PARAM_DIL_ADR]);
+
+	DWIN_changeIcon(registerTable[DW_PARAM_DIL_ADR]);
+
+	DWIN_changeWord(registerTable[DW_PARAM_DIL_ADR]);
+
+	DWIN_changeKeyboard(registerTable[DW_PARAM_DIL_ADR]);
+
+	DWIN_changeAnim(registerTable[DW_PARAM_DIL_ADR]);
 
 }
 
@@ -714,359 +1485,63 @@ DWIN_Response DWIN_buzzerSet(uint8_t setLevel)
 {
 	DWIN_Response response = NO_RESPONSE;
 
-	uint8_t txBuffer[12];
-
-	txBuffer[0] = 0x5A;
-	txBuffer[1] = 0xA5;
-	txBuffer[2] = 0x09;
-	txBuffer[3] = 0x82;
-	txBuffer[4] = 0x00;
-	txBuffer[5] = 0x80;
-	txBuffer[6] = 0x5A;
-	txBuffer[7] = 0x00;
-
-	uint16_t level = 0;
-
-	if(setLevel == 1)
-		level = 0x0038;
-	else
-		level = 0x0030;
-
-
-	uint8_t highByte, lowByte;
-    highByte 	= (level >> 8) & 0xFF;
-    lowByte 	= level & 0xFF;
-
-	txBuffer[8] = highByte;
-	txBuffer[9] = lowByte;
-
-	uint8_t crcBuffer[7];
-
-	for(int i=3;i<10;i++)
-		crcBuffer[i-3] = txBuffer[i];
-
-	uint16_t crc = calculateCRC16Modbus(crcBuffer,7);
-
-	txBuffer[10] = crc & 0xFF;
-	txBuffer[11] = (crc >> 8) & 0xFF;
-
-	uint8_t numOfAttempts = 0;
-
-	sendPoint:
-
-	//DWIN.receiveStatus = NO_RESPONSE;
-	memset(DWIN_rxBuffer,0,sizeof(DWIN_rxBuffer));
-
-	DWIN.rxDoneFlag = 0;
-	HAL_UART_Transmit(DWIN_huart_channel, txBuffer, sizeof(txBuffer), 100);
-	numOfAttempts++;
-
-	uint32_t timeOut = HAL_GetTick();
-	while((DWIN.rxDoneFlag != 1)&&((HAL_GetTick() - timeOut)<=TIMEOUT_MS));
-
-	if(((HAL_GetTick() - timeOut) <= TIMEOUT_MS)&&(numOfAttempts <= MAX_ATTEMPT))
+	if(setLevel)
 	{
-		response = DWIN_receiveDataProcess();
-
-		if(response == WRITE_OK)
-			DWIN.rxDoneFlag = 0;
-
-		else if(response != READ_OK)
-		{
-			#if DEBUG_DWIN == 1
-			SEGGER_RTT_printf(0,"DWIN WRITE ERROR \r\n");
-			#endif
-
-
-			goto sendPoint;
-		}
+		uint16_t writeData[2] = {0x5AFF,0x90B9};
+		response = DWIN_writeRegiser(writeData, 0x0080, sizeof(writeData));
 	}
 	else
 	{
-		if(numOfAttempts <= MAX_ATTEMPT)
-		{
-			#if DEBUG_DWIN == 1
-			SEGGER_RTT_printf(0,"DWIN NO RESPONSE \r\n");
-			#endif
-
-			goto sendPoint;
-		}
-
-		DWIN.Init = 0;
-		DWIN.rxDoneFlag = 0;
-	}
-
-	return response;
-
-}
-
-DWIN_Response DWIN_buharActivePassive(uint8_t setMode)
-{
-	DWIN_Response response = NO_RESPONSE;
-
-	uint8_t txAdr[27] 	=		{0x1D, 0x1E, 0x1F,0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x35,0x36,0x37,0x38,0x39,0x3A,0x3B,0x3C,0x52,0x52,0x53,0x53,0x54,0x54,0x02,0x02,0x02};
-	uint8_t txData_order[27] =	{0x01,0x04,0x04,0x04,0x06,0x05,0x05,0x06,0x05,0x05,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x06,0x07,0x00,0x01,0x00,0x01,0x07,0x08,0x00};
-	uint8_t txData_id[27]	 =	{0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x08,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x08};
-
-	for(int i=0;i<27;i++)
-	{
-		uint8_t txMsg[16] 	= 	{0x5A, 0xA5, 0x0D, 0x82, 0x00, 0xB0, 0x5A, 0xA5, 0x00, 0xFF, 0xFF, 0xFF, 0x00, 0xFF, 0xAA, 0xAA};
-
-		txMsg[9] 	= txAdr[i];
-		txMsg[10]	= txData_order[i];
-		txMsg[11]	= txData_id[i];
-		txMsg[13]	= setMode;
-
-		uint8_t crcBuffer[11];
-
-		for(int j=3;j<14;j++)
-			crcBuffer[j-3] = txMsg[j];
-
-		uint16_t crc = calculateCRC16Modbus(crcBuffer,11);
-
-		txMsg[14] = crc & 0xFF;
-		txMsg[15] = (crc >> 8) & 0xFF;
-
-		uint8_t numOfAttempts = 0;
-
-		sendPoint:
-
-		HAL_Delay(20);
-
-		//DWIN.receiveStatus = NO_RESPONSE;
-		memset(DWIN_rxBuffer,0,sizeof(DWIN_rxBuffer));
-
-		DWIN.rxDoneFlag = 0;
-		HAL_UART_Transmit(DWIN_huart_channel, txMsg, sizeof(txMsg), 100);
-		numOfAttempts++;
-
-		uint32_t timeOut = HAL_GetTick();
-		while((DWIN.rxDoneFlag != 1)&&((HAL_GetTick() - timeOut)<=TIMEOUT_MS));
-
-		if(((HAL_GetTick() - timeOut) <= TIMEOUT_MS)&&(numOfAttempts <= MAX_ATTEMPT))
-		{
-			response = DWIN_receiveDataProcess();
-
-			if(response == WRITE_OK)
-				DWIN.rxDoneFlag = 0;
-
-			else if(response != READ_OK)
-			{
-				#if DEBUG_DWIN == 1
-				SEGGER_RTT_printf(0,"DWIN WRITE ERROR \r\n");
-				#endif
-
-
-				goto sendPoint;
-			}
-		}
-		else
-		{
-			if(numOfAttempts <= MAX_ATTEMPT)
-			{
-				#if DEBUG_DWIN == 1
-				SEGGER_RTT_printf(0,"DWIN NO RESPONSE \r\n");
-				#endif
-
-				goto sendPoint;
-			}
-
-			DWIN.Init = 0;
-			DWIN.rxDoneFlag = 0;
-
-			break;
-		}
-	}
-
-	if(response != NO_RESPONSE)
-	{
-		uint16_t setModeu16 = setMode;
-		DWIN_writeRegiser(&setModeu16, 0xF300, sizeof(setModeu16));
-		response = DWIN_writeRegiser(&setModeu16, DW_BUHAR_ACTIVE_ADR, sizeof(setModeu16));
+		uint16_t writeData[2] = {0x5AFF,0x90B1};
+		response = DWIN_writeRegiser(writeData, 0x0080, sizeof(writeData));
 	}
 
 	return response;
 }
 
-//DWIN_Response DWIN_buharActivePassive(uint8_t setMode)
-//{
-//	DWIN_Response response = NO_RESPONSE;
-//
-//	uint8_t txData[3][16] = {	{0x5A,0xA5,0x0D,0x82,0x00,0xB0,0x5A,0xA5,0x00,0x02,0x07,0x02,0x00,setMode,0xFF,0xFF},
-//								{0x5A,0xA5,0x0D,0x82,0x00,0xB0,0x5A,0xA5,0x00,0x02,0x08,0x02,0x00,setMode,0xFF,0xFF},
-//								{0x5A,0xA5,0x0D,0x82,0x00,0xB0,0x5A,0xA5,0x00,0x02,0x00,0x08,0x00,setMode,0xFF,0xFF}
-//							};
-//
-//	for(int i=0;i<3;i++)
-//	{
-//		uint8_t txBuffer[16];
-//
-//		for(int j=0;j<16;j++)
-//			txBuffer[j] = txData[i][j];
-//
-//		uint8_t crcBuffer[11];
-//
-//		for(int i=3;i<14;i++)
-//			crcBuffer[i-3] = txBuffer[i];
-//
-//		uint16_t crc = calculateCRC16Modbus(crcBuffer,11);
-//
-//		txBuffer[14] = crc & 0xFF;
-//		txBuffer[15] = (crc >> 8) & 0xFF;
-//
-//		uint8_t numOfAttempts = 0;
-//
-//		sendPoint:
-//
-//		HAL_Delay(50);
-//
-//		//DWIN.receiveStatus = NO_RESPONSE;
-//		memset(DWIN_rxBuffer,0,sizeof(DWIN_rxBuffer));
-//
-//		DWIN.rxDoneFlag = 0;
-//		HAL_UART_Transmit(DWIN_huart_channel, txBuffer, sizeof(txBuffer), 100);
-//		numOfAttempts++;
-//
-//		uint32_t timeOut = HAL_GetTick();
-//		while((DWIN.rxDoneFlag != 1)&&((HAL_GetTick() - timeOut)<=TIMEOUT_MS));
-//
-//		if(((HAL_GetTick() - timeOut) <= TIMEOUT_MS)&&(numOfAttempts <= MAX_ATTEMPT))
-//		{
-//			response = DWIN_receiveDataProcess();
-//
-//			if(response == WRITE_OK)
-//				DWIN.rxDoneFlag = 0;
-//
-//			else if(response != READ_OK)
-//			{
-//				#if DEBUG_DWIN == 1
-//				SEGGER_RTT_printf(0,"DWIN WRITE ERROR \r\n");
-//				#endif
-//
-//
-//				goto sendPoint;
-//			}
-//		}
-//		else
-//		{
-//			if(numOfAttempts <= MAX_ATTEMPT)
-//			{
-//				#if DEBUG_DWIN == 1
-//				SEGGER_RTT_printf(0,"DWIN NO RESPONSE \r\n");
-//				#endif
-//
-//				goto sendPoint;
-//			}
-//
-//			DWIN.Init = 0;
-//			DWIN.rxDoneFlag = 0;
-//
-//			break;
-//		}
-//	}
-//
-//	if(response != NO_RESPONSE)
-//	{
-//		uint16_t setModeu16 = setMode;
-//		DWIN_writeRegiser(&setModeu16, 0xF300, sizeof(setModeu16));
-//		response = DWIN_writeRegiser(&setModeu16, DW_BUHAR_ACTIVE_ADR, sizeof(setModeu16));
-//	}
-//
-//	return response;
-//
-//}
 
-DWIN_Response DWIN_dokunmatik_aktif_msg(void)
+
+
+DWIN_Response touchSetOnOff_structure(uint16_t mode, uint16_t page , uint8_t controlID, uint8_t keyCode)
 {
 	DWIN_Response response = NO_RESPONSE;
 
-	uint8_t txData[4][6] = 	{
-								{0x00,0x00,0x00,0x05,0x00,0x01},
-								{0x00,0x00,0x02,0x05,0x00,0x01},
-								{0x00,0x00,0x03,0x05,0x00,0x01},
-								{0x00,0x00,0x01,0x02,0x00,0x01}
-								};
+	uint16_t tx[4];
 
-	for(int j=0;j<4;j++)
-	{
-		uint8_t txBuffer[16];
+	tx[0]=0x5AA5;
+	tx[1]=page;
+	tx[2]=(uint16_t)(controlID<<0x08)+keyCode;
+	tx[3]=mode;
 
-		txBuffer[0] = 0x5A;
-		txBuffer[1] = 0xA5;
-		txBuffer[2] = 0x0D;
-		txBuffer[3] = 0x82;
-		txBuffer[4] = 0x00;
-		txBuffer[5] = 0xB0;
-		txBuffer[6] = 0x5A;
-		txBuffer[7] = 0xA5;
+	HAL_Delay(50);
 
+	response = DWIN_writeRegiser(tx, 0x00b0, sizeof(tx));
 
-		for(int k=0;k<6;k++)
-			txBuffer[k+8] = txData[j][k];
+	return response;
+}
 
+DWIN_Response DWIN_dokunmatik_msg(void)
+{
+	DWIN_Response response = NO_RESPONSE;
 
-		uint8_t crcBuffer[11];
+	touchSetOnOff_structure(1,0,0,5);
+	touchSetOnOff_structure(1,0,1,2);
+	touchSetOnOff_structure(1,0,2,5);
+	touchSetOnOff_structure(1,0,3,5);
 
-		for(int i=3;i<14;i++)
-			crcBuffer[i-3] = txBuffer[i];
+    // Pişirme sonrası alarmın dokunmatikleri
+	touchSetOnOff_structure(0,82,0,5);			// Recete - cift tc buhar var
+	touchSetOnOff_structure(0,83,0,5);			// Recete - cift tc buhar yok
+	touchSetOnOff_structure(0,84,0,5);			// Recete - tek tc buhar var
+	touchSetOnOff_structure(0,85,0,5);			// Recete - tek tc buhar yok
 
-		uint16_t crc = calculateCRC16Modbus(crcBuffer,11);
-
-		txBuffer[14] = crc & 0xFF;
-		txBuffer[15] = (crc >> 8) & 0xFF;
-
-		uint8_t numOfAttempts = 0;
-
-		sendPoint:
-
-		//DWIN.receiveStatus = NO_RESPONSE;
-		memset(DWIN_rxBuffer,0,sizeof(DWIN_rxBuffer));
-
-		DWIN.rxDoneFlag = 0;
-		HAL_UART_Transmit(DWIN_huart_channel, txBuffer, sizeof(txBuffer), 100);
-		numOfAttempts++;
-
-		uint32_t timeOut = HAL_GetTick();
-		while((DWIN.rxDoneFlag != 1)&&((HAL_GetTick() - timeOut)<=TIMEOUT_MS));
-
-		if(((HAL_GetTick() - timeOut) <= TIMEOUT_MS)&&(numOfAttempts <= MAX_ATTEMPT))
-		{
-			response = DWIN_receiveDataProcess();
-
-			if(response == WRITE_OK)
-				DWIN.rxDoneFlag = 0;
-
-			else if(response != READ_OK)
-			{
-				#if DEBUG_DWIN == 1
-				SEGGER_RTT_printf(0,"DWIN WRITE ERROR \r\n");
-				#endif
-
-
-				goto sendPoint;
-			}
-		}
-		else
-		{
-			if(numOfAttempts <= MAX_ATTEMPT)
-			{
-				#if DEBUG_DWIN == 1
-				SEGGER_RTT_printf(0,"DWIN NO RESPONSE \r\n");
-				#endif
-
-				goto sendPoint;
-			}
-
-			DWIN.Init = 0;
-			DWIN.rxDoneFlag = 0;
-		}
-
-		HAL_Delay(50);
-	}
+	touchSetOnOff_structure(0,2,0,5);			// Manuel - cift tc buhar var
+	touchSetOnOff_structure(0,96,0,5);			// Manuel - cift tc buhar yok
+	touchSetOnOff_structure(0,94,0,5);			// Manuel - tek tc buhar var
+	touchSetOnOff_structure(0,95,0,5);			// Manuel - tek tc buhar yok
 
 
 	return response;
-
 }
 
 
@@ -1085,7 +1560,6 @@ void DWIN_run(void)
 		if(DWIN.Init == 1)
 		{
 
-
 			registerTable[DW_MCP9700_ADR] 		= temp.TMP;
 			registerTable[DW_UST_SICAKLIK_ADR] 	= temp.TC3;
 			registerTable[DW_ALT_SICAKLIK_ADR] 	= temp.TC2;
@@ -1102,558 +1576,137 @@ void DWIN_run(void)
 
 			}
 
+			else if(registerTable[REG_DW_MODE_INFO_ADR] == DW_CIHAZ_TEST_SAYFA_ENTER)
+			{
+				uint8_t in1,in2,in3,in4,in5,in6,in_AC_1 = 0,in_AC_2 = 0;
+
+				in1 	= HAL_GPIO_ReadPin(INPUT_1);
+				in2 	= HAL_GPIO_ReadPin(INPUT_2);
+				in3 	= HAL_GPIO_ReadPin(INPUT_3);
+				in4 	= HAL_GPIO_ReadPin(INPUT_4);
+				in5 	= HAL_GPIO_ReadPin(INPUT_5);
+				in6 	= HAL_GPIO_ReadPin(INPUT_6);
+
+				for(int i=0;i<25;i++)
+				{
+					if(HAL_GPIO_ReadPin(INPUT_AC_1) == 1)
+						in_AC_1 = 1;
+
+					if(HAL_GPIO_ReadPin(INPUT_AC_2) == 1)
+						in_AC_2 = 1;
+
+					HAL_Delay(0);
+				}
+
+				uint16_t testSendData[11] = {temp.TC1,temp.TC2,temp.TC3,
+											in1,in2,in3,in4,in5,in6,in_AC_1,in_AC_2};
+
+				DWIN_writeRegiser(testSendData, DW_TEST_TC1_ADR,sizeof(testSendData));
+			}
+
 		}
 
 	}
 
-	if((HAL_GetTick() - counterTick.shiftRefreshWait) >= 5)
-	{
-		counterTick.shiftRefreshWait = HAL_GetTick();
-		pwmOutProcess();
-	}
+	shiftRefresh();
 
-
-	DWIN_check();							// Tekrar Init olduğunda reçeteler ve rtc init olmuyor !!
+	DWIN_check();
 	DWIN_answerProcess();
 	DWIN_manuelPisirmeSuresi();
 	DWIN_manuelBuharSuresi();
 	DWIN_pisirmeSonuAlarm();
 	DWIN_lambaSuresi();
-	DWIN_manuelPeriodProcess();
 	DWIN_buharHazirCheck();
 	DWIN_otomatikPisirmeBaslatmaCheck();
 }
-void DWIN_manuelPeriodProcess(void)
-{
-	if(ustSicaklikProcess == 1)
-	{
-		uint32_t period 	= registerTable[DW_ISITICI_PERIOD_ADR] * 1000;
-		uint32_t ustOnSet 	= registerTable[DW_UST_ON_SET_ADR]*1000;
-		uint32_t ustArkaSet = registerTable[DW_UST_ARKA_SET_ADR]*1000;
 
-		if(ustOnTurbo != 1)
-		{
-			if(((HAL_GetTick() - counterTick.ustOnPeriod) >= ustOnSet) && (registerTable[DW_UST_ON_ANIM] == 1))
-			{
-				uint16_t data = 0;
 
-				setOut(K1, data);
-				registerTable[DW_UST_ON_ANIM] = data;
-				DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
-			}
-			if(((HAL_GetTick() - counterTick.ustOnPeriod) >= period) && (registerTable[DW_UST_ON_ANIM] == 0))
-			{
-				uint16_t data = 1;
-
-				setOut(K1, data);
-				registerTable[DW_UST_ON_ANIM] = data;
-				registerTable[DW_UST_SICAKLIK_ANIM] = data;
-
-				DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
-				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-
-				counterTick.ustOnPeriod = HAL_GetTick();
-			}
-		}
-
-		if(ustArkaTurbo != 1)
-		{
-			if(((HAL_GetTick() - counterTick.ustArkaPeriod) >= ustArkaSet) && (registerTable[DW_UST_ARKA_ANIM] == 1))
-			{
-				uint16_t data = 0;
-
-				setOut(K3, data);
-				registerTable[DW_UST_ARKA_ANIM] = data;
-				DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
-			}
-			if(((HAL_GetTick() - counterTick.ustArkaPeriod) >= period) && (registerTable[DW_UST_ARKA_ANIM] == 0))
-			{
-				uint16_t data = 1;
-
-				setOut(K3, data);
-				registerTable[DW_UST_ARKA_ANIM] = data;
-				registerTable[DW_UST_SICAKLIK_ANIM] = data;
-
-				DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
-				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-
-				counterTick.ustArkaPeriod = HAL_GetTick();
-			}
-		}
-
-		if((registerTable[DW_UST_ARKA_ANIM] == 0) && (registerTable[DW_UST_ON_ANIM] == 0) && (registerTable[DW_UST_SICAKLIK_ANIM] == 1))
-		{
-			uint16_t data = 0;
-
-			registerTable[DW_UST_SICAKLIK_ANIM] = data;
-			DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-		}
-	}
-
-	if((altSicaklikProcess == 1)&&(altTurbo != 1))
-	{
-		uint32_t period 	= registerTable[DW_ISITICI_PERIOD_ADR] * 1000;
-		uint32_t altSet		= registerTable[DW_ALT_SET_ADR]*1000;
-
-		if(((HAL_GetTick() - counterTick.altPeriod) >= altSet) && (registerTable[DW_ALT_ANIM] == 1))
-		{
-			uint16_t data = 0;
-
-			setOut(K5|K6, data);
-			registerTable[DW_ALT_ANIM] = data;
-			registerTable[DW_ALT_SICAKLIK_ANIM] = data;
-
-			DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
-			DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
-		}
-
-		if(((HAL_GetTick() - counterTick.altPeriod) >= period) && (registerTable[DW_ALT_ANIM] == 0))
-		{
-			uint16_t data = 1;
-
-			setOut(K5|K6, data);
-			registerTable[DW_ALT_ANIM] = data;
-			registerTable[DW_ALT_SICAKLIK_ANIM] = data;
-
-			DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
-			DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
-
-			counterTick.altPeriod = HAL_GetTick();
-		}
-	}
-}
-
-
-void DWIN_manuelTurboProcess(void)
-{
-	if(registerTable[DW_TURBO_ADR] == 1)
-	{
-		uint16_t ustSicaklikSet 	= registerTable[DW_UST_SICAKLIK_SET_ADR];
-		uint16_t altSicaklikSet 	= registerTable[DW_ALT_SICAKLIK_SET_ADR];
-		uint16_t ustSicaklik 		= registerTable[DW_UST_SICAKLIK_ADR];
-		uint16_t altSicaklik 		= registerTable[DW_ALT_SICAKLIK_ADR];
-		uint16_t ustOnIsiticiBand 	= registerTable[DW_UST_ON_ISITICI_BANDI_ADR];
-		uint16_t ustArkaIsiticiBand = registerTable[DW_UST_ARKA_ISITICI_BANDI_ADR];
-		uint16_t altIsiticiBand		= registerTable[DW_ALT_ISITICI_BANDI_ADR];
-		//int16_t isiticiUstHis		= registerTable[DW_ISITICI_UST_HIS_ADR];
-		int16_t isiticiAltHis		= registerTable[DW_ISITICI_ALT_HIS_ADR];
-
-		uint16_t data;
-
-		if(((altIsiticiBand + altSicaklik) < altSicaklikSet) && (altTurbo != 1))
-		{
-			altTurbo = 1;
-			turboCloseFlag = 0;
-
-			data = 1;
-
-			DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
-			DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
-
-			registerTable[DW_ALT_SICAKLIK_ANIM] = data;
-			registerTable[DW_ALT_ANIM] = data;
-
-			setOut(K6|K5, data);
-
-			SEGGER_RTT_printf(0,"Alt Turbo Aktif \r\n");
-
-			if(((ustArkaIsiticiBand + ustSicaklik) < ustSicaklikSet) && (ustArkaTurbo != 1))
-			{
-				ustArkaTurbo = 1;
-				turboCloseFlag = 0;
-
-				data = 1;
-
-				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-				DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
-
-				registerTable[DW_UST_SICAKLIK_ANIM] = data;
-				registerTable[DW_UST_ARKA_ANIM] = data;
-
-				setOut(K3, data);
-
-				SEGGER_RTT_printf(0,"Ust Arka Turbo Aktif \r\n");
-			}
-
-			if(((ustOnIsiticiBand + ustSicaklik) < ustSicaklikSet) && (ustOnTurbo != 1))
-			{
-				ustOnTurbo = 1;
-				turboCloseFlag = 0;
-
-				data = 1;
-
-				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-				DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
-
-				registerTable[DW_UST_SICAKLIK_ANIM] = data;
-				registerTable[DW_UST_ON_ANIM] = data;
-
-				setOut(K1, data);
-
-				SEGGER_RTT_printf(0,"Ust On Turbo Aktif \r\n");
-			}
-		}
-
-		if(altTurbo == 1)
-		{
-			if(((ustOnIsiticiBand + ustSicaklik) < ustSicaklikSet) && (ustOnTurbo != 1))
-			{
-				ustOnTurbo = 1;
-				turboCloseFlag = 0;
-
-				data = 1;
-
-				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-				DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
-
-				registerTable[DW_UST_SICAKLIK_ANIM] = data;
-				registerTable[DW_UST_ON_ANIM] = data;
-
-				setOut(K1, data);
-
-				SEGGER_RTT_printf(0,"Ust On Turbo Aktif \r\n");
-			}
-
-			if(((ustArkaIsiticiBand + ustSicaklik) < ustSicaklikSet) && (ustArkaTurbo != 1))
-			{
-				ustArkaTurbo = 1;
-				turboCloseFlag = 0;
-
-				data = 1;
-
-				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-				DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
-
-				registerTable[DW_UST_SICAKLIK_ANIM] = data;
-				registerTable[DW_UST_ARKA_ANIM] = data;
-
-				setOut(K3, data);
-
-				SEGGER_RTT_printf(0,"Ust Arka Turbo Aktif \r\n");
-			}
-
-			if((altIsiticiBand + altSicaklik) >= altSicaklikSet)
-			{
-				altTurbo = 0;
-				ustOnTurbo = 0;
-				ustArkaTurbo = 0;
-
-				data = 0;
-
-				DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
-				DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
-
-				registerTable[DW_ALT_SICAKLIK_ANIM] = data;
-				registerTable[DW_ALT_ANIM] = data;
-
-				setOut(K6|K5, data);
-
-				SEGGER_RTT_printf(0,"Alt Turbo Kapali \r\n");
-
-				counterTick.altPeriod 	= HAL_GetTick();
-			}
-
-		}
-
-		if((ustOnTurbo == 1)&&((ustOnIsiticiBand + ustSicaklik) >= ustSicaklikSet))
-		{
-			ustOnTurbo = 0;
-			data = 0;
-
-			DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
-
-			registerTable[DW_UST_ON_ANIM] = data;
-
-			setOut(K1, data);
-
-			SEGGER_RTT_printf(0,"Ust On Turbo Kapali \r\n");
-		}
-
-		if((ustArkaTurbo == 1)&&((ustArkaIsiticiBand + ustSicaklik) >= ustSicaklikSet))
-		{
-			ustArkaTurbo = 0;
-			data = 0;
-
-			DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
-
-			registerTable[DW_UST_ARKA_ANIM] = data;
-
-			setOut(K3, data);
-
-			SEGGER_RTT_printf(0,"Ust Arka Turbo Kapali \r\n");
-		}
-
-		if(altSicaklikSet <= (altSicaklik + isiticiAltHis))
-		{
-			if(((ustOnIsiticiBand + ustSicaklik) < ustSicaklikSet) && (ustOnTurbo != 1))
-			{
-				ustOnTurbo = 1;
-				turboCloseFlag = 0;
-
-				data = 1;
-
-				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-				DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
-
-				registerTable[DW_UST_SICAKLIK_ANIM] = data;
-				registerTable[DW_UST_ON_ANIM] = data;
-
-				setOut(K1, data);
-
-				SEGGER_RTT_printf(0,"Ust On Turbo Aktif \r\n");
-			}
-
-			if(((ustArkaIsiticiBand + ustSicaklik) < ustSicaklikSet) && (ustArkaTurbo != 1))
-			{
-				ustArkaTurbo = 1;
-				turboCloseFlag = 0;
-
-				data = 1;
-
-				DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-				DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
-
-				registerTable[DW_UST_SICAKLIK_ANIM] = data;
-				registerTable[DW_UST_ARKA_ANIM] = data;
-
-				setOut(K3, data);
-
-				SEGGER_RTT_printf(0,"Ust Arka Turbo Aktif \r\n");
-			}
-		}
-		else if(((ustArkaTurbo == 1)||(ustOnTurbo == 1))&&(altTurbo == 0))
-		{
-			ustOnTurbo = 0;
-			ustArkaTurbo = 0;
-		}
-
-		if((registerTable[DW_UST_ARKA_ANIM] == 0)&&(registerTable[DW_UST_ON_ANIM] == 0)&&(registerTable[DW_UST_SICAKLIK_ANIM] == 1))
-		{
-			data = 0;
-			DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-			registerTable[DW_UST_SICAKLIK_ANIM] = data;
-		}
-
-		if((altTurbo == 0)&&(ustArkaTurbo == 0)&&(ustOnTurbo == 0)&&(turboCloseFlag == 0))
-		{
-			counterTick.turboCloseWait = HAL_GetTick();
-			turboCloseFlag = 1;
-		}
-
-		if((turboCloseFlag == 1)&&((HAL_GetTick() - counterTick.turboCloseWait) >= 10000))
-		{
-			data = 0;
-
-			turboCloseFlag = 0;
-
-			registerTable[DW_TURBO_ADR] = data;
-			DWIN_writeRegiser(&data, DW_TURBO_ADR, sizeof(data));
-		}
-	}
-}
-void DWIN_manuelProcess(void)
-{
-	uint16_t ustSicaklikSet 	= registerTable[DW_UST_SICAKLIK_SET_ADR];
-	uint16_t altSicaklikSet 	= registerTable[DW_ALT_SICAKLIK_SET_ADR];
-	uint16_t ustSicaklik 		= registerTable[DW_UST_SICAKLIK_ADR];
-	uint16_t altSicaklik 		= registerTable[DW_ALT_SICAKLIK_ADR];
-	//uint16_t ustOnIsiticiBand 	= registerTable[DW_UST_ON_ISITICI_BANDI_ADR];
-	//uint16_t ustArkaIsiticiBand = registerTable[DW_UST_ARKA_ISITICI_BANDI_ADR];
-	//uint16_t altIsiticiBand		= registerTable[DW_ALT_ISITICI_BANDI_ADR];
-	int16_t isiticiUstHis		= registerTable[DW_ISITICI_UST_HIS_ADR];
-	int16_t isiticiAltHis		= registerTable[DW_ISITICI_ALT_HIS_ADR];
-
-	uint16_t data;
-
-	if(ustSicaklikSet > (ustSicaklik + isiticiUstHis))
-	{
-		if(ustSicaklikProcess != 1)
-		{
-			data = 1;
-
-			DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-			DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
-			DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
-
-			registerTable[DW_UST_SICAKLIK_ANIM] = data;
-			registerTable[DW_UST_ON_ANIM] 		= data;
-			registerTable[DW_UST_ARKA_ANIM] 	= data;
-
-
-			setOut(K3|K1, data);
-
-			counterTick.ustOnPeriod 	= HAL_GetTick();
-			counterTick.ustArkaPeriod 	= HAL_GetTick();
-
-			ustSicaklikProcess = 1;
-
-			#if DEBUG_DWIN == 1
-			SEGGER_RTT_printf(0," ustSicaklikProcess = 1 \r\n");
-			#endif
-		}
-	}
-	else
-	{
-		if(ustSicaklikProcess != 99)
-		{
-			data = 0;
-
-			DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-			DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
-			DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
-
-			registerTable[DW_UST_SICAKLIK_ANIM] = data;
-			registerTable[DW_UST_ON_ANIM] = data;
-			registerTable[DW_UST_ARKA_ANIM] = data;
-
-			setOut(K3|K1, data);
-
-			ustSicaklikProcess = 99;
-
-			#if DEBUG_DWIN == 1
-			SEGGER_RTT_printf(0," ustSicaklikProcess = 99 \r\n");
-			#endif
-		}
-	}
-
-	if(altSicaklikSet > (altSicaklik + isiticiAltHis))
-	{
-		if(altSicaklikProcess != 1)
-		{
-			data = 1;
-
-			DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
-			DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
-
-			registerTable[DW_ALT_SICAKLIK_ANIM] = data;
-			registerTable[DW_ALT_ANIM] = data;
-
-			setOut(K6|K5, 1);
-
-			altSicaklikProcess = 1;
-
-			counterTick.altPeriod 	= HAL_GetTick();
-
-			#if DEBUG_DWIN == 1
-			SEGGER_RTT_printf(0," altSicaklikProcess = 1 \r\n");
-			#endif
-		}
-	}
-	else
-	{
-		if(altSicaklikProcess != 99)
-		{
-			data = 0;
-
-			DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
-			DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
-
-			registerTable[DW_ALT_SICAKLIK_ANIM] = data;
-			registerTable[DW_ALT_ANIM] = data;
-
-			setOut(K6|K5, data);
-
-			altSicaklikProcess = 99;
-
-			#if DEBUG_DWIN == 1
-			SEGGER_RTT_printf(0," altSicaklikProcess = 99 \r\n");
-			#endif
-		}
-	}
-
-}
-void DWIN_enterManuelProcess(void)
-{
-	uint16_t ustSicaklikSet 	= registerTable[DW_UST_SICAKLIK_SET_ADR];
-	uint16_t altSicaklikSet 	= registerTable[DW_ALT_SICAKLIK_SET_ADR];
-	uint16_t ustSicaklik 		= registerTable[DW_UST_SICAKLIK_ADR];
-	uint16_t altSicaklik 		= registerTable[DW_ALT_SICAKLIK_ADR];
-	//uint16_t ustOnIsiticiBand 	= registerTable[DW_UST_ON_ISITICI_BANDI_ADR];
-	//uint16_t ustArkaIsiticiBand = registerTable[DW_UST_ARKA_ISITICI_BANDI_ADR];
-	uint16_t altIsiticiBand		= registerTable[DW_ALT_ISITICI_BANDI_ADR];
-	int8_t isiticiUstHis		= registerTable[DW_ISITICI_UST_HIS_ADR];
-	int8_t isiticiAltHis		= registerTable[DW_ISITICI_ALT_HIS_ADR];
-
-	uint16_t data = 1;
-
-	if(ustSicaklikSet > (ustSicaklik + isiticiUstHis))
-	{
-		if(altSicaklikSet <= (altSicaklik + isiticiAltHis))
-		{
-			registerTable[DW_TURBO_ADR] = 1;
-
-			DWIN_writeRegiser(&data, DW_TURBO_ADR, sizeof(data));
-
-			#if DEBUG_DWIN == 1
-			SEGGER_RTT_printf(0,"Turbo Aktif \r\n");
-			#endif
-		}
-	}
-	if(altSicaklikSet > (altSicaklik + isiticiAltHis))
-	{
-
-		if(altSicaklikSet > (altSicaklik + altIsiticiBand))
-		{
-
-			registerTable[DW_TURBO_ADR] = 1;
-
-			DWIN_writeRegiser(&data, DW_TURBO_ADR, sizeof(data));
-
-			#if DEBUG_DWIN == 1
-			SEGGER_RTT_printf(0,"Turbo Aktif \r\n");
-			#endif
-		}
-	}
-}
+static uint8_t dwin_check_counter = 0;
 
 void DWIN_check(void)
 {
 	if((HAL_GetTick() - counterTick.dwinCheck) >= 500)
 	{
-		if(DWIN.Init != 1)
+		if((DWIN.Init != 1) && (dwin_check_counter < 5))
 		{
 			uint8_t version[2];
 
 			if(DWIN_readRegister(version, DWIN_VERSION_ADDR, sizeof(version)) == READ_OK)
 			{
+				dwin_check_counter = 0;
+
 				SEGGER_RTT_printf(0,"DWIN OK ! Version : %x%x\r\n",version[0],version[1]);
 
-				DWIN_changePage(0);
+				///////////////////////////////////////////////////////////////////
+				uint8_t saniye,dakika,saat,gun,hafta,ay,yil;
+				DWIN_readRTC(&saniye, &dakika, &saat, &hafta, &gun, &ay, &yil);
+				RTC_SetDateTime(saat, dakika, saniye, gun, ay, yil);
+				///////////////////////////////////////////////////////////////////
 
-				for(int i=0;i<sizeof(eepromAddrTable)/2;i++)
+				if(registerTable[DW_PARAM_DIL_ADR] != DW_DIL_TURKCE_VAL)
+					DWIN_dilChange();
+
+
+				for(int i=0;i<EEPROM_TABLE_LEN;i++)
 				{
 					uint16_t writeDwin = registerTable[eepromAddrTable[i]];
 					DWIN_writeRegiser(&writeDwin, eepromAddrTable[i], sizeof(writeDwin));
 				}
 
-				DWIN_changeMaxSetValue(registerTable[DW_ISITICI_PERIOD_ADR]);
+				if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+				{
+
+					DWIN_change_buhar_settings(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR]);
+
+				}
+
+				if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+				{
+					DWIN_change_cihaz_type_settings(registerTable[DW_PARAM_CIHAZ_TYPE_ADR]);
+				}
+
+				if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						returnkeycode_change_structure(DW_PAGE_MANUEL_BUHARYOK_TEKTC_ADR);			// Manuel - tek tc buhar yok
+
+					else
+						returnkeycode_change_structure(DW_PAGE_MANUEL_BUHARVAR_TEKTC_ADR);			// Manuel - tek tc buhar var
+				}
+				else
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						returnkeycode_change_structure(DW_PAGE_MANUEL_BUHARYOK_CIFTTC_ADR);			// Manuel - cift tc buhar yok
+
+					else
+						returnkeycode_change_structure(DW_PAGE_MANUEL_BUHARVAR_CIFTTC_ADR);			// Manuel - cift tc buhar var
+				}
 
 				DWIN_resetManuelPisirme();
 
 				uint16_t writeData = 0;
 
-				if(registerTable[DW_BUTTON_SOUND_ADR] == 1)
+				if(registerTable[DW_PARAM_BUTTON_SOUND_ADR] == 1)
 				{
 					DWIN_buzzerSet(1);
-					writeData = registerTable[DW_BUTTON_SOUND_ADR];
-					DWIN_writeRegiser(&writeData, DW_BUTTON_SOUND_ADR, sizeof(writeData));
+					writeData = registerTable[DW_PARAM_BUTTON_SOUND_ADR];
+					DWIN_writeRegiser(&writeData, DW_PARAM_BUTTON_SOUND_ADR, sizeof(writeData));
 				}
 				else
 				{
 					DWIN_buzzerSet(0);
-					writeData = registerTable[DW_BUTTON_SOUND_ADR];
-					DWIN_writeRegiser(&writeData, DW_BUTTON_SOUND_ADR, sizeof(writeData));
+					writeData = registerTable[DW_PARAM_BUTTON_SOUND_ADR];
+					DWIN_writeRegiser(&writeData, DW_PARAM_BUTTON_SOUND_ADR, sizeof(writeData));
 				}
 
-				if(registerTable[DW_BUHAR_ACTIVE_ADR] != 1)
-					DWIN_buharActivePassive(0);
 
-
-				DWIN_dokunmatik_aktif_msg();
+				DWIN_dokunmatik_msg();
 
 				writeData = 0;
 
 				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
+
+				DWIN_changePage(0);
 
 				DWIN.Init = 1;
 			}
@@ -1683,6 +1736,8 @@ void DWIN_check(void)
 				  Error_Handler();
 				}
 			}
+
+			HAL_GPIO_WritePin(ESP32_EN, 0);
 		}
 
 		counterTick.dwinCheck = HAL_GetTick();
@@ -1726,12 +1781,50 @@ void DWIN_manuelPisirmeSuresi(void)
 				setOut(K10, 1);
 				pisirmeSonuAlarmBuzzer = 0;
 				registerTable[DW_PISIRME_BASLATMA_ADR] = 0;
-				registerTable[MANUEL_SURE_SONU_ADR] = 1;
+				registerTable[DW_SURE_SONU_ALARM_ANIM_ADR] = 1;
 
 				if(registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)
-					DWIN_changePage(MANUEL_SURE_SONU_ADR);
+				{
+					if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+					{
+						if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+							touchSetOnOff_structure(1,95,0,5);			// Manuel - tek tc buhar yok
+
+						else
+							touchSetOnOff_structure(1,94,0,5);			// Manuel - tek tc buhar var
+					}
+					else
+					{
+						if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+							touchSetOnOff_structure(1,96,0,5);			// Manuel - cift tc buhar yok
+
+						else
+							touchSetOnOff_structure(1,2,0,5);			// Manuel - cift tc buhar var
+					}
+				}
 				else if(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER)
-					DWIN_changePage(RECETE_SURE_SONU_ADR);
+				{
+					if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+					{
+						if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+							touchSetOnOff_structure(1,85,0,5);			// Recete - tek tc buhar yok
+
+						else
+							touchSetOnOff_structure(1,84,0,5);			// Recete - tek tc buhar var
+					}
+					else
+					{
+						if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+							touchSetOnOff_structure(1,83,0,5);			// Recete - cift tc buhar yok
+
+						else
+							touchSetOnOff_structure(1,82,0,5);			// Recete - cift tc buhar var
+					}
+				}
+
+				uint16_t data = 1;
+				DWIN_writeRegiser(&data, DW_SURE_SONU_ALARM_ANIM_ADR, sizeof(data));
+
 			}
 
 			DWIN_recetePisirmeAdimProcess();
@@ -1755,6 +1848,7 @@ void DWIN_manuelBuharSuresi_Calc(void)
 }
 
 uint16_t buharManuelDownCounter_eski = 0;
+
 void DWIN_manuelBuharSuresi(void)
 {
 	if((registerTable[DW_BUHAR_PUSKURTME_ADR] == 1)&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
@@ -1788,7 +1882,7 @@ void DWIN_lambaSuresi(void)
 {
 	if(registerTable[DW_LAMBA_ADR] == 1)
 	{
-		if((HAL_GetTick() - counterTick.lambaSuresi) >= (registerTable[DW_LAMBA_SURESI_ADR] * 1000))
+		if((HAL_GetTick() - counterTick.lambaSuresi) >= (registerTable[DW_PARAM_LAMBA_SURESI_ADR] * 1000))
 		{
 			setOut(K12, 0);
 			setOut(K13, 0);
@@ -1840,8 +1934,216 @@ void DWIN_answerProcess(void)
 			else if(registerTable[REG_DW_MODE_INFO_ADR] == DW_OTOMATIK_ACMA_SAYFA_ENTER)
 				DWIN_otomatikSayfa();
 
+			else if(registerTable[REG_DW_MODE_INFO_ADR] == DW_CIHAZ_TEST_SAYFA_ENTER)
+			{
+				DWIN_testSayfa();
+			}
+
 		}
 
+	}
+}
+
+void DWIN_testSayfa(void)
+{
+	uint16_t addr = combineBytes(DWIN_rxBuffer[4], DWIN_rxBuffer[5]);
+	uint16_t data = combineBytes(DWIN_rxBuffer[7], DWIN_rxBuffer[8]);
+
+	if((addr >= DW_TEST_K1_ADR)&&(addr <= DW_TEST_BUZZER_ADR))
+	{
+		uint32_t outputList[18] = {K1,K2,K3,K4,K5,K6,K8,K9,K10,K11,K12,K13,K14,K15,K16,K17,K18,BUZZER};
+
+		setOut(outputList[addr-DW_TEST_K1_ADR],data);
+	}
+	else
+	{
+		switch(addr)
+		{
+			case DW_TEST_HEPSINIAC_ADR:
+
+				if(data == 1)
+				{
+					setOut(K1|K2|K3|K4|K5|K6|K8|K9|K10|K11|K12|K13|K14|K15|K16|K17|K18,1);
+
+					uint16_t writeData[17] = {1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1};
+					DWIN_writeRegiser(writeData, DW_TEST_K1_ADR, sizeof(writeData));
+				}
+
+			break;
+
+			case DW_TEST_HEPSINIKAPAT_ADR:
+
+				setOut(K1|K2|K3|K4|K5|K6|K8|K9|K10|K11|K12|K13|K14|K15|K16|K17|K18|BUZZER,0);
+
+				uint16_t writeData2[19] = {0};
+				DWIN_writeRegiser(writeData2, DW_TEST_K1_ADR, sizeof(writeData2));
+
+			break;
+
+			case DW_TEST_EXIT_ADR:
+
+				registerTable[REG_DW_MODE_INFO_ADR] = 0;
+
+				setOut(K1|K2|K3|K4|K5|K6|K8|K9|K10|K11|K12|K13|K14|K15|K16|K17|K18|BUZZER,0);
+				PWM_StartSmoothTransition(0, 50);
+				setAnalogVoltage(0, DAC_CHANNEL_1);
+				setAnalogVoltage(0, DAC_CHANNEL_2);
+
+				uint16_t writeData3[30] = {0};
+				DWIN_writeRegiser(writeData3, DW_TEST_K1_ADR, sizeof(writeData3));
+
+			break;
+		}
+	}
+
+	if((addr >= DW_TEST_1KHZ_ADR)&&(addr <= DW_TEST_4KHZ_ADR))
+	{
+		uint16_t writeData[4] = {0};
+
+		writeData[addr - DW_TEST_1KHZ_ADR] = data;
+
+		PWM_StartSmoothTransition((addr - DW_TEST_1KHZ_ADR + 1)*1000*data, 50);
+
+		DWIN_writeRegiser(writeData, DW_TEST_1KHZ_ADR, sizeof(writeData));
+	}
+	else if((addr >= DW_TEST_OUT2_3V_ADR)&&(addr <= DW_TEST_OUT2_9V_ADR))
+	{
+		uint16_t writeData[3] = {0};
+
+		setAnalogVoltage((addr - DW_TEST_OUT2_3V_ADR + 1) * 3.0 * data , DAC_CHANNEL_2);
+
+		writeData[addr - DW_TEST_OUT2_3V_ADR] = data;
+
+		DWIN_writeRegiser(writeData, DW_TEST_OUT2_3V_ADR, sizeof(writeData));
+	}
+	else if((addr >= DW_TEST_OUT1_5V_ADR)&&(addr <= DW_TEST_OUT1_15V_ADR))
+	{
+		uint16_t writeData[3] = {0};
+
+		setAnalogVoltage((addr - DW_TEST_OUT1_5V_ADR + 1) * 5.0 * data , DAC_CHANNEL_1);
+
+		writeData[addr - DW_TEST_OUT1_5V_ADR] = data;
+
+		DWIN_writeRegiser(writeData, DW_TEST_OUT1_5V_ADR, sizeof(writeData));
+	}
+}
+
+
+void DWIN_change_buhar_settings(uint16_t setVal)
+{
+
+	for (int i = 0; i < 10; i++)
+	{
+		touchSetOnOff_structure(((uint8_t) (setVal & 0x0F)), 0x001d + i,0x01, 0x08);
+		HAL_Delay(50);
+	}
+
+	for(int i=0; i<8; i++)
+	{
+		touchSetOnOff_structure(((uint8_t) (setVal & 0x0F)), 0x0035 + i,0x01, 0x02);
+		HAL_Delay(50);
+	}
+
+	uint16_t writeData = !setVal;
+	DWIN_writeRegiser(&writeData, 0x7AAB, sizeof(writeData));
+
+}
+
+void DWIN_change_cihaz_type_settings(uint16_t setVal)
+{
+	uint16_t writeData = !setVal;
+	DWIN_writeRegiser(&writeData, 0x7AAA, sizeof(writeData));
+
+	for (int i = 0; i < 10; i++)
+	{
+		touchSetOnOff_structure(((uint8_t)(setVal>>4)),0x001d+i,0x00,0x08);
+	}
+
+	DWIN_writeRegiser(&writeData, 0x7AAC, sizeof(writeData));
+
+	touchSetOnOff_structure(setVal,0x0035,00,05);
+	touchSetOnOff_structure(setVal,0x0037,00,05);
+	touchSetOnOff_structure(setVal,0x0038,00,05);
+	touchSetOnOff_structure(setVal,0x0039,00,05);
+
+	DWIN_tcVisualController(setVal);
+
+	if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0) //if single temperature control is active, change the icons to match the single temperature control mode
+	{
+		switch(registerTable[DW_PARAM_DIL_ADR])
+		{
+			case 0x000:
+
+				for(int i=0; i<7; i++)
+				{
+					dwin_icon_change_structure(0x4868+(i*0x0a), 0x009F,0x009F, 0x3A01);
+				}
+
+				break;
+			case 0x001:
+
+				for(int i=0; i<7; i++)
+				{
+					dwin_icon_change_structure(0x4868+(i*0x0a), 0x009D,0x009D, 0x3A01);
+				}
+
+				break;
+			case 0x002:
+
+				for(int i=0; i<7; i++)
+				{
+					dwin_icon_change_structure(0x4868+(i*0x0a), 0x009e,0x009e, 0x3A01);
+				}
+
+				break;
+			case 0x003:
+
+				for(int i=0; i<7; i++)
+				{
+					dwin_icon_change_structure( 0x4868+(i*0x0a), 0x0043, 0x0043, 0x3E01);
+				}
+
+				break;
+		}
+	}
+	else
+	{
+		switch(registerTable[DW_PARAM_DIL_ADR])
+
+		{
+			case 0x000:
+
+				for(int i=0; i<7; i++)
+				{
+					dwin_icon_change_structure( 0x4868+(i*0x0a), 0x0016, 0x0016, 0x3700);
+				}
+
+				break;
+			case 0x001:
+
+				for(int i=0; i<7; i++)
+				{
+					dwin_icon_change_structure(0x4868+(i*0x0a), 0x0089, 0x0089, 0x3A00);
+				}
+
+				break;
+			case 0x002:
+
+				for(int i=0; i<7; i++)
+				{
+					dwin_icon_change_structure( 0x4868+(i*0x0a), 0x008a, 0x008a, 0x3A00);
+				}
+
+				break;
+			case 0x003:
+
+				for(int i=0; i<7; i++)
+				{
+					dwin_icon_change_structure( 0x4868+(i*0x0a), 0x004B, 0x004B, 0x3E01);
+				}
+
+				break;
+		}
 	}
 }
 
@@ -1877,12 +2179,7 @@ void DWIN_anaSayfa(void)
 
 			if(data == 0)
 			{
-				registerTable[REG_DW_MODE_INFO_ADR] = DW_ANA_SAYFA_ENTER;
-
 				DWIN_resetManuelPisirme();
-//				TIM15->CCR2 = 0;
-//				TIM15->CCR1 = 0;
-//				TIM3->CCR1 = 0;
 			}
 
 
@@ -1891,11 +2188,9 @@ void DWIN_anaSayfa(void)
 				registerTable[REG_DW_MODE_INFO_ADR] = DW_MANUEL_MODE_ENTER;
 
 				setOut(K14, data);
-				//DWIN_enterManuelProcess();
 				PID_Setup();
 
 			}
-
 
 
 		break;
@@ -1914,134 +2209,309 @@ void DWIN_anaSayfa(void)
 
 		case DW_PARAMETRE_PAGE_ADR:
 
-			if(data == DW_PARAMETRE_PSW)
+			if(data == registerTable[DW_PARAM_PSW_ADR])
 			{
-				data = registerTable[DW_LAMBA_SURESI_ADR];
-				DWIN_writeRegiser(&data, DW_LAMBA_SURESI_ADR, sizeof(data));
+				DWIN_changePage(DW_AYARLAR_PAGE_ADR);
+			}
 
-				data = registerTable[DW_UST_ON_ISITICI_BANDI_ADR];
-				DWIN_writeRegiser(&data, DW_UST_ON_ISITICI_BANDI_ADR, sizeof(data));
-
-				data = registerTable[DW_UST_ARKA_ISITICI_BANDI_ADR];
-				DWIN_writeRegiser(&data, DW_UST_ARKA_ISITICI_BANDI_ADR, sizeof(data));
-
-				data = registerTable[DW_ALT_ISITICI_BANDI_ADR];
-				DWIN_writeRegiser(&data, DW_ALT_ISITICI_BANDI_ADR, sizeof(data));
-
-				data = registerTable[DW_ISITICI_UST_HIS_ADR];
-				DWIN_writeRegiser(&data, DW_ISITICI_UST_HIS_ADR, sizeof(data));
-
-				data = registerTable[DW_ISITICI_ALT_HIS_ADR];
-				DWIN_writeRegiser(&data, DW_ISITICI_ALT_HIS_ADR, sizeof(data));
-
-				data = registerTable[DW_ISITICI_PERIOD_ADR];
-				DWIN_writeRegiser(&data, DW_ISITICI_PERIOD_ADR, sizeof(data));
-
-				DWIN_changePage(86);
+			else if(data == DW_CIHAZ_TEST_PAGE_PSW)
+			{
+				outputData = 0;
+				DWIN_changePage(DW_CIHAZ_TEST_PAGE_ADR);
+				registerTable[REG_DW_MODE_INFO_ADR] = DW_CIHAZ_TEST_SAYFA_ENTER;
 			}
 
 			else
-				DWIN_changePage(10);
+				DWIN_changePage(DW_ANA_PAGE_ADR);
 
 
 		break;
 
-		case DW_LAMBA_SURESI_ADR:
+		case DW_PARAMETRE_EXIT_PAGE_ADR:
 
-			registerTable[DW_LAMBA_SURESI_ADR] = data;
+			uint8_t pageChangeCheck = 0;
+
+			uint8_t readData[2];
+			DWIN_readRegister(readData, DW_PARAM_DIL_ADR, sizeof(readData));
+
+			if(readData[1] != registerTable[DW_PARAM_DIL_ADR])
+			{
+				registerTable[DW_PARAM_DIL_ADR] = readData[1];
+
+				EEPROM_Write(&hi2c1, DW_PARAM_DIL_ADR, readData, sizeof(readData));
+
+				DWIN_changePage(DW_EMPTY_PAGE_NUM);
+
+				uint16_t writeData = 1;
+				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
+
+				DWIN_dilChange();
+
+				EEPROM_Recete_DefaultWrite(&hi2c1);
+				EEPROM_Recete_Read(&hi2c1);
+
+				writeData = 0;
+				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
+
+				DWIN_changePage(0);
+
+			}
+
+			DWIN_readRegister(readData, DW_PARAM_BUHAR_ACTIVE_ADR, sizeof(readData));
+
+			if(readData[1] != registerTable[DW_PARAM_BUHAR_ACTIVE_ADR])
+			{
+				pageChangeCheck++;
+
+				registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] = readData[1];
+
+				EEPROM_Write(&hi2c1, DW_PARAM_BUHAR_ACTIVE_ADR, readData, sizeof(readData));
+
+				DWIN_changePage(DW_EMPTY_PAGE_NUM);
+
+				uint16_t writeData = 1;
+				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
+
+				DWIN_change_buhar_settings(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR]);
+
+				writeData = 0;
+				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
+
+				DWIN_changePage(0);
+			}
+
+			DWIN_readRegister(readData, DW_PARAM_CIHAZ_TYPE_ADR, sizeof(readData));
+
+			if(readData[1] != registerTable[DW_PARAM_CIHAZ_TYPE_ADR])
+			{
+				pageChangeCheck++;
+
+				registerTable[DW_PARAM_CIHAZ_TYPE_ADR] = readData[1];
+
+				EEPROM_Write(&hi2c1, DW_PARAM_CIHAZ_TYPE_ADR, readData, sizeof(readData));
+
+				DWIN_changePage(DW_EMPTY_PAGE_NUM);
+
+				uint16_t writeData = 1;
+				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
+
+				DWIN_change_cihaz_type_settings(registerTable[DW_PARAM_CIHAZ_TYPE_ADR]);
+
+				writeData = 0;
+				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
+
+				DWIN_changePage(0);
+			}
+
+			if(pageChangeCheck>0)
+			{
+				if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						returnkeycode_change_structure(DW_PAGE_MANUEL_BUHARYOK_TEKTC_ADR);			// Manuel - tek tc buhar yok
+
+					else
+						returnkeycode_change_structure(DW_PAGE_MANUEL_BUHARVAR_TEKTC_ADR);			// Manuel - tek tc buhar var
+				}
+				else
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						returnkeycode_change_structure(DW_PAGE_MANUEL_BUHARYOK_CIFTTC_ADR);			// Manuel - cift tc buhar yok
+
+					else
+						returnkeycode_change_structure(DW_PAGE_MANUEL_BUHARVAR_CIFTTC_ADR);			// Manuel - cift tc buhar var
+				}
+			}
+
+
+		break;
+
+		case DW_PARAM_LAMBA_SURESI_ADR:
+
+			registerTable[DW_PARAM_LAMBA_SURESI_ADR] = data;
 
 			parse16BitTo8Bit(data, &data2[0], &data2[1]);
 
-			EEPROM_Write(&hi2c1, DW_LAMBA_SURESI_ADR, data2, sizeof(data2));
+			EEPROM_Write(&hi2c1, DW_PARAM_LAMBA_SURESI_ADR, data2, sizeof(data2));
 
 		break;
 
-		case DW_UST_ON_ISITICI_BANDI_ADR:
+		case DW_PARAM_BUTTON_SOUND_ADR:
 
-			registerTable[DW_UST_ON_ISITICI_BANDI_ADR] = data;
+			registerTable[DW_PARAM_BUTTON_SOUND_ADR] = data;
+
+			if(data == 1)
+				DWIN_buzzerSet(1);
+			else
+				DWIN_buzzerSet(0);
 
 			parse16BitTo8Bit(data, &data2[0], &data2[1]);
 
-			EEPROM_Write(&hi2c1, DW_UST_ON_ISITICI_BANDI_ADR, data2, sizeof(data2));
+			EEPROM_Write(&hi2c1, DW_PARAM_BUTTON_SOUND_ADR, data2, sizeof(data2));
+
 
 		break;
 
-		case DW_UST_ARKA_ISITICI_BANDI_ADR:
+		case DW_PARAM_ALARM_ADR:
 
-			registerTable[DW_UST_ARKA_ISITICI_BANDI_ADR] = data;
+			registerTable[DW_PARAM_ALARM_ADR] = data;
 
 			parse16BitTo8Bit(data, &data2[0], &data2[1]);
 
-			EEPROM_Write(&hi2c1, DW_UST_ARKA_ISITICI_BANDI_ADR, data2, sizeof(data2));
+			EEPROM_Write(&hi2c1, DW_PARAM_ALARM_ADR, data2, sizeof(data2));
 
 		break;
 
-		case DW_ALT_ISITICI_BANDI_ADR:
+		case DW_PARAM_PSW_ADR:
 
-			registerTable[DW_ALT_ISITICI_BANDI_ADR] = data;
+			registerTable[DW_PARAM_PSW_ADR] = data;
 
 			parse16BitTo8Bit(data, &data2[0], &data2[1]);
 
-			EEPROM_Write(&hi2c1, DW_ALT_ISITICI_BANDI_ADR, data2, sizeof(data2));
+			EEPROM_Write(&hi2c1, DW_PARAM_PSW_ADR, data2, sizeof(data2));
+
+			DWIN_changePage(DW_AYARLAR_PAGE_ADR);
 
 		break;
 
-		case DW_ISITICI_UST_HIS_ADR:
 
-			registerTable[DW_ISITICI_UST_HIS_ADR] = data;
+//		case DW_PARAM_BUHAR_ACTIVE_ADR:
+//
+//			registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] = data;
+//
+//			//DWIN_buharActivePassive(data);
+//
+//			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+//
+//			EEPROM_Write(&hi2c1, DW_PARAM_BUHAR_ACTIVE_ADR, data2, sizeof(data2));
+//
+//
+//		break;
+
+		case DW_PARAM_BUHAR_SENSOR_TYPE_ADR:
+
+			registerTable[DW_PARAM_BUHAR_SENSOR_TYPE_ADR] = data;
 
 			parse16BitTo8Bit(data, &data2[0], &data2[1]);
 
-			EEPROM_Write(&hi2c1, DW_ISITICI_UST_HIS_ADR, data2, sizeof(data2));
+			EEPROM_Write(&hi2c1, DW_PARAM_BUHAR_SENSOR_TYPE_ADR, data2, sizeof(data2));
 
 		break;
 
-		case DW_ISITICI_ALT_HIS_ADR:
 
-			registerTable[DW_ISITICI_ALT_HIS_ADR] = data;
+		case DW_PARAM_BUHAR_MAX_SET_ADR:
+
+			registerTable[DW_PARAM_BUHAR_MAX_SET_ADR] = data;
 
 			parse16BitTo8Bit(data, &data2[0], &data2[1]);
 
-			EEPROM_Write(&hi2c1, DW_ISITICI_ALT_HIS_ADR, data2, sizeof(data2));
+			EEPROM_Write(&hi2c1, DW_PARAM_BUHAR_MAX_SET_ADR, data2, sizeof(data2));
 
 		break;
 
-		case DW_ISITICI_PERIOD_ADR:
+		case DW_PARAM_BUHAR_HAZIR_SICAK_ADR:
 
-			registerTable[DW_ISITICI_PERIOD_ADR] = data;
+			registerTable[DW_PARAM_BUHAR_HAZIR_SICAK_ADR] = data;
 
 			parse16BitTo8Bit(data, &data2[0], &data2[1]);
 
-			EEPROM_Write(&hi2c1, DW_ISITICI_PERIOD_ADR, data2, sizeof(data2));
-
-			DWIN_changeMaxSetValue(data);
+			EEPROM_Write(&hi2c1, DW_PARAM_BUHAR_HAZIR_SICAK_ADR, data2, sizeof(data2));
 
 		break;
 
-		case DW_BUHAR_ACTIVE_ADR:
+		case DW_PARAM_BUHAR_UST_HIS_ADR:
 
-			registerTable[DW_BUHAR_ACTIVE_ADR] = data;
-
-			DWIN_buharActivePassive(data);
+			registerTable[DW_PARAM_BUHAR_UST_HIS_ADR] = data;
 
 			parse16BitTo8Bit(data, &data2[0], &data2[1]);
 
-			EEPROM_Write(&hi2c1, DW_BUHAR_ACTIVE_ADR, data2, sizeof(data2));
-
-
+			EEPROM_Write(&hi2c1, DW_PARAM_BUHAR_UST_HIS_ADR, data2, sizeof(data2));
 
 		break;
 
-		case DW_ARIZA_ALARM_SUSTURMA_ADR:
+		case DW_PARAM_BUHAR_ALT_HIS_ADR:
 
-			data = 1;
+			registerTable[DW_PARAM_BUHAR_ALT_HIS_ADR] = data;
 
-			registerTable[DW_ARIZA_ALARM_SUSTURMA_ADR] = 1;
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
 
-			pisirmeSonuAlarmFlag = 0;
-			pisirmeSonuAlarmBuzzer = 0;
-			setOut(BUZZER, 0);
-			setOut(K10, 0);
+			EEPROM_Write(&hi2c1, DW_PARAM_BUHAR_ALT_HIS_ADR, data2, sizeof(data2));
+
+		break;
+
+		case DW_PARAM_TERMOKUPL_TYPE_ADR:
+
+			registerTable[DW_PARAM_TERMOKUPL_TYPE_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_TERMOKUPL_TYPE_ADR, data2, sizeof(data2));
+
+		break;
+
+		case DW_SURE_SONU_ALARM_ANIM_ADR:
+
+			data = 0;
+
+			registerTable[DW_SURE_SONU_ALARM_ANIM_ADR] = data;
+
+			pisirmeSonuAlarmFlag = data;
+			pisirmeSonuAlarmBuzzer = data;
+			setOut(BUZZER, data);
+			setOut(K10, data);
+
+			registerTable[DW_PISIRME_BASLATMA_ADR] = 0;
+
+			data = registerTable[DW_PISIRME_SURESI_ORT_ADR];
+			registerTable[DW_PISIRME_SURESI_ADR] 	= registerTable[DW_PISIRME_SURESI_ORT_ADR];
+			registerTable[DW_PISIRME_SURESI_SN_ADR] = 0;
+
+			DWIN_writeRegiser(&data, DW_PISIRME_SURESI_ADR, sizeof(data));
+
+			data = 0;
+
+			DWIN_writeRegiser(&data, DW_PISIRME_SURESI_SN_ADR, sizeof(data));
+			DWIN_writeRegiser(&data, DW_PISIRME_BASLATMA_ADR, sizeof(data));
+			DWIN_writeRegiser(&data, DW_PISIRME_SONLANDIRMA_ADR, sizeof(data));
+
+			if(registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)
+			{
+				if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						touchSetOnOff_structure(0,95,0,5);			// Manuel - tek tc buhar yok
+
+					else
+						touchSetOnOff_structure(0,94,0,5);			// Manuel - tek tc buhar var
+				}
+				else
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						touchSetOnOff_structure(0,96,0,5);			// Manuel - cift tc buhar yok
+
+					else
+						touchSetOnOff_structure(0,2,0,5);			// Manuel - cift tc buhar var
+				}
+			}
+			else if(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER)
+			{
+				if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						touchSetOnOff_structure(0,85,0,5);			// Recete - tek tc buhar yok
+
+					else
+						touchSetOnOff_structure(0,84,0,5);			// Recete - tek tc buhar var
+				}
+				else
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						touchSetOnOff_structure(0,83,0,5);			// Recete - cift tc buhar yok
+
+					else
+						touchSetOnOff_structure(0,82,0,5);			// Recete - cift tc buhar var
+				}
+			}
 
 		break;
 
@@ -2079,18 +2549,34 @@ void DWIN_anaSayfa(void)
 
 		break;
 
-		case DW_BUTTON_SOUND_ADR:
-
-			registerTable[DW_BUTTON_SOUND_ADR] = data;
+		case DW_FARBRIKA_AYAR_PARAM_ADR:
 
 			if(data == 1)
-				DWIN_buzzerSet(1);
-			else
-				DWIN_buzzerSet(0);
+			{
+				uint8_t eraseWrite = 0;
+				EEPROM_Write(&hi2c1, EEPROM_USAGE_CHECK_ADDR, &eraseWrite, 1);
+				HAL_Delay(0);
 
-			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+				DWIN_writeRegiser((uint16_t[]){0x55aa,0x5aa5},0x0004,4);
 
-			EEPROM_Write(&hi2c1, DW_BUTTON_SOUND_ADR, data2, sizeof(data2));
+				HAL_Delay(1000);
+
+				NVIC_SystemReset();
+			}
+
+		break;
+
+
+		case DW_ARIZA_ALARM_SUSTURMA_ADR:
+
+			data = 1;
+
+			registerTable[DW_ARIZA_ALARM_SUSTURMA_ADR] = 1;
+
+			pisirmeSonuAlarmFlag = 0;
+			pisirmeSonuAlarmBuzzer = 0;
+			setOut(BUZZER, 0);
+			setOut(K10, 0);
 
 		break;
 
@@ -2176,13 +2662,6 @@ void DWIN_manuelSayfa(void)
 			{
 				PID_Setup();
 			}
-			//setOut(K1|K3|K5|K6, data);
-
-//			DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-//			DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
-//			DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
-//			DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
-//			DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
 
 		break;
 
@@ -2223,60 +2702,6 @@ void DWIN_manuelSayfa(void)
 
 				PID_Setup();
 
-			}
-
-		break;
-
-		case DW_UST_ON_SET_ONAY_ADR:
-
-
-			if(data == 1)
-			{
-				uint8_t data2[2];
-				DWIN_readRegister(data2, DW_UST_ON_SET_ORT_ADR, sizeof(data2));
-
-				data = combineBytes(data2[0], data2[1]);
-				registerTable[DW_UST_ON_SET_ADR] = data;
-
-				DWIN_writeRegiser(&data, DW_UST_ON_SET_ADR, sizeof(data));
-
-				EEPROM_Write(&hi2c1, DW_UST_ON_SET_ADR, data2, sizeof(data2));
-			}
-
-		break;
-
-		case DW_UST_ARKA_SET_ONAY_ADR:
-
-
-			if(data == 1)
-			{
-				uint8_t data2[2];
-				DWIN_readRegister(data2, DW_UST_ARKA_SET_ORT_ADR, sizeof(data2));
-
-				data = combineBytes(data2[0], data2[1]);
-				registerTable[DW_UST_ARKA_SET_ADR] = data;
-
-				DWIN_writeRegiser(&data, DW_UST_ARKA_SET_ADR, sizeof(data));
-
-				EEPROM_Write(&hi2c1, DW_UST_ARKA_SET_ADR, data2, sizeof(data2));
-			}
-
-		break;
-
-		case DW_ALT_SET_ONAY_ADR:
-
-
-			if(data == 1)
-			{
-				uint8_t data2[2];
-				DWIN_readRegister(data2, DW_ALT_SET_ORT_ADR, sizeof(data2));
-
-				data = combineBytes(data2[0], data2[1]);
-				registerTable[DW_ALT_SET_ADR] = data;
-
-				DWIN_writeRegiser(&data, DW_ALT_SET_ADR, sizeof(data));
-
-				EEPROM_Write(&hi2c1, DW_ALT_SET_ADR, data2, sizeof(data2));
 			}
 
 		break;
@@ -2381,7 +2806,7 @@ void DWIN_manuelSayfa(void)
 				data = registerTable[DW_PISIRME_SURESI_ORT_ADR];
 				registerTable[DW_PISIRME_SURESI_ADR] 	= registerTable[DW_PISIRME_SURESI_ORT_ADR];
 				registerTable[DW_PISIRME_SURESI_SN_ADR] = 0;
-				registerTable[MANUEL_SURE_SONU_ADR] 	= 0;
+				registerTable[DW_SURE_SONU_ALARM_ANIM_ADR] 	= 0;
 
 				DWIN_writeRegiser(&data, DW_PISIRME_SURESI_ADR, sizeof(data));
 
@@ -2464,7 +2889,23 @@ void DWIN_receteSayfa(void)
 				registerTable[DW_PISIRME_SURESI_ORT_ADR] 	= registerTable[DW_PISIRME_SURESI_ADR];
 				registerTable[DW_BUHAR_SURESI_ORT_ADR] 		= registerTable[DW_BUHAR_SURESI_ADR];
 
-				DWIN_changePage(DW_RECETE_PISIRME_PAGE_ADR);
+
+				if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						DWIN_changePage(DW_PAGE_RECETE_BUHARYOK_TEKTC_ADR);			// Manuel - tek tc buhar yok
+
+					else
+						DWIN_changePage(DW_PAGE_RECETE_BUHARVAR_TEKTC_ADR);			// Manuel - tek tc buhar var
+				}
+				else
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						DWIN_changePage(DW_PAGE_RECETE_BUHARYOK_CIFTTC_ADR);			// Manuel - cift tc buhar yok
+
+					else
+						DWIN_changePage(DW_PAGE_RECETE_BUHARVAR_CIFTTC_ADR);			// Manuel - cift tc buhar var
+				}
 
 				uint16_t adim_anim_list[4]= {DW_RECETE_A1_ANIM_ADR,
 											DW_RECETE_A2_ANIM_ADR,
@@ -2487,7 +2928,6 @@ void DWIN_receteSayfa(void)
 				}
 
 				setOut(K14, data);
-				//DWIN_enterManuelProcess();
 				PID_Setup();
 
 			break;
@@ -2622,6 +3062,110 @@ void DWIN_receteSayfa(void)
 	}
 }
 
+void automaticOpeningVisualController(uint8_t dayNumber, uint8_t mode, uint8_t tcCount) //mode 1: manual, mode 2: recipe, 1-7: day number
+{
+    uint16_t baseTextSp=0x1598;
+    uint16_t baseIconVp=0x1595;
+    uint16_t baseTopTempSp=0x15A5;
+    uint16_t baseBottomTempSp=0x15B2;
+    uint16_t baseTopTempVp=0x1586;
+    uint16_t baseBottomTempVp=0x1587;
+    uint16_t baseTextVp=0x1589;
+
+    uint16_t addrOffset = (dayNumber - 1) * (0x3B);
+
+    uint16_t data[1];
+
+    if(tcCount==0x01) //dual tc
+    {
+        if(mode==1) //manual
+        {
+            // delete text
+            data[0] = 0xFF00;
+            DWIN_writeRegiser(data, baseTextSp + addrOffset, sizeof(data));
+
+            // activate icon
+            data[0] = 0x0035;
+            DWIN_writeRegiser(data, baseIconVp + addrOffset, sizeof(data));
+
+            // activate top temp value
+            data[0] = baseTopTempVp + addrOffset;
+            DWIN_writeRegiser(data, baseTopTempSp + addrOffset, sizeof(data));
+
+            // activate bottom temp value
+            data[0] = baseBottomTempVp + addrOffset;
+            DWIN_writeRegiser(data, baseBottomTempSp + addrOffset, sizeof(data));
+        }
+        else if (mode == 2) //recipe
+        {
+            // activate text
+            data[0] = baseTextVp + addrOffset;
+            DWIN_writeRegiser(data, baseTextSp + addrOffset, sizeof(data));
+
+            // deactivate icon
+            data[0] = 0x003A;
+            DWIN_writeRegiser(data, baseIconVp + addrOffset, sizeof(data));
+
+            // delete top temp value
+            data[0] = 0xFF00;
+            DWIN_writeRegiser(data, baseTopTempSp + addrOffset, sizeof(data));
+
+            // delete bottom temp value
+            data[0] = 0xFF00;
+            DWIN_writeRegiser(data, baseBottomTempSp + addrOffset, sizeof(data));
+        }
+        else
+        {
+            return;
+        }
+
+    }
+    else if(tcCount==0x00) //single tc
+    {
+        if(mode==1) //manual
+        {
+            // delete text
+            data[0] = 0xFF00;
+            DWIN_writeRegiser(data, baseTextSp + addrOffset, sizeof(data));
+
+            // activate icon
+            data[0] = 0x0035;
+            DWIN_writeRegiser(data, baseIconVp + addrOffset, sizeof(data));
+
+            // activate top temp value
+            data[0] = baseTopTempVp + addrOffset;
+            DWIN_writeRegiser(data, baseTopTempSp + addrOffset, sizeof(data));
+
+        }
+        else if (mode == 2) //recipe
+        {
+            // activate text
+            data[0] = baseTextVp + addrOffset;
+            DWIN_writeRegiser(data, baseTextSp + addrOffset, sizeof(data));
+
+            // deactivate icon
+            data[0] = 0x003A;
+            DWIN_writeRegiser(data, baseIconVp + addrOffset, sizeof(data));
+
+            // delete top temp value
+            data[0] = 0xFF00;
+            DWIN_writeRegiser(data, baseTopTempSp + addrOffset, sizeof(data));
+
+        }
+        else
+        {
+            return;
+        }
+    }
+    else {
+		return;
+	}
+
+
+    //written by Senior Embedded Software Engineer Hakan Altunkanat on 13.04.2026
+    //All rights reserved by Step Elektronik San. ve Tic. Ltd. Sti.
+}
+
 void DWIN_otomatikSayfa(void)
 {
 	uint16_t addr = combineBytes(DWIN_rxBuffer[4], DWIN_rxBuffer[5]);
@@ -2659,30 +3203,9 @@ void DWIN_otomatikSayfa(void)
 
 					DWIN_writeRegiser(writeData, DW_OTOMATIK_ACMA_ILK_ADR + ((islemdekiOtomatikGun-1) * DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(writeData));
 
-					if(data == 1)
-					{
-						uint16_t oto_write = 0x0101;
-						DWIN_writeRegiser(&oto_write, 0x15A2 + ((islemdekiOtomatikGun-1)*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
+					automaticOpeningVisualController(islemdekiOtomatikGun, data, registerTable[DW_PARAM_CIHAZ_TYPE_ADR]);
 
-						oto_write = 0x1812;
-						DWIN_writeRegiser(&oto_write, 0x15A9 + ((islemdekiOtomatikGun-1)*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
-						DWIN_writeRegiser(&oto_write, 0x15B6 + ((islemdekiOtomatikGun-1)*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
 
-						oto_write = 0x0035;
-						DWIN_writeRegiser(&oto_write, 0x1595 + ((islemdekiOtomatikGun-1)*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
-					}
-					else if(data == 2)
-					{
-						uint16_t oto_write = 0x162C;
-						DWIN_writeRegiser(&oto_write, 0x15A2 + ((islemdekiOtomatikGun-1)*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
-
-						oto_write = 0x0101;
-						DWIN_writeRegiser(&oto_write, 0x15A9 + ((islemdekiOtomatikGun-1)*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
-						DWIN_writeRegiser(&oto_write, 0x15B6 + ((islemdekiOtomatikGun-1)*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
-
-						oto_write = 0x003A;
-						DWIN_writeRegiser(&oto_write, 0x1595 + ((islemdekiOtomatikGun-1)*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
-					}
 
 					for(int i=0;i<sizeof(writeData)/2;i++)
 						registerTable[DW_OTOMATIK_ACMA_ILK_ADR + ((islemdekiOtomatikGun-1) * DW_OTOMATIK_ACMA_ADR_LENGTH) + i] = writeData[i];
@@ -3187,35 +3710,75 @@ void DWIN_resetManuelPisirme(void)
 
 	uint16_t data;
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	registerTable[DW_PISIRME_SURESI_ADR] 	= registerTable[DW_PISIRME_SURESI_ORT_ADR];
 	registerTable[DW_PISIRME_SURESI_SN_ADR] = 0;
 	data = registerTable[DW_PISIRME_SURESI_ORT_ADR];
 	DWIN_writeRegiser(&data, DW_PISIRME_SURESI_ADR, sizeof(data));
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	registerTable[DW_BUHAR_SURESI_ADR] 	= registerTable[DW_BUHAR_SURESI_ORT_ADR];
 	registerTable[DW_BUHAR_PUSKURTME_ADR] = 0;
 	data = registerTable[DW_BUHAR_SURESI_ORT_ADR];
 	DWIN_writeRegiser(&data, DW_BUHAR_SURESI_ADR, sizeof(data));
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	if(registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)
+	{
+		if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+		{
+			if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+				touchSetOnOff_structure(0,95,0,5);			// Manuel - tek tc buhar yok
+
+			else
+				touchSetOnOff_structure(0,94,0,5);			// Manuel - tek tc buhar var
+		}
+		else
+		{
+			if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+				touchSetOnOff_structure(0,96,0,5);			// Manuel - cift tc buhar yok
+
+			else
+				touchSetOnOff_structure(0,2,0,5);			// Manuel - cift tc buhar var
+		}
+	}
+	else if(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER)
+	{
+		if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+		{
+			if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+				touchSetOnOff_structure(0,85,0,5);			// Recete - tek tc buhar yok
+
+			else
+				touchSetOnOff_structure(0,84,0,5);			// Recete - tek tc buhar var
+		}
+		else
+		{
+			if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+				touchSetOnOff_structure(0,83,0,5);			// Recete - cift tc buhar yok
+
+			else
+				touchSetOnOff_structure(0,82,0,5);			// Recete - cift tc buhar var
+		}
+	}
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	registerTable[DW_PISIRME_BASLATMA_ADR] 		= 0;
 	registerTable[DW_BUHAR_HAZIRLAMA_ADR] 		= 0;
 	registerTable[DW_BUHAR_PUSKURTME_ADR] 		= 0;
 	registerTable[DW_TURBO_ADR] 				= 0;
 	registerTable[DW_UST_SICAKLIK_ANIM] 		= 0;
-	registerTable[DW_UST_ON_ANIM] 				= 0;
-	registerTable[DW_UST_ARKA_ANIM] 			= 0;
+	registerTable[DW_SURE_SONU_ALARM_ANIM_ADR] 	= 0;
 	registerTable[DW_ALT_SICAKLIK_ANIM] 		= 0;
-	registerTable[DW_ALT_ANIM] 					= 0;
 	registerTable[DW_ARIZA_PAGE_ADR]			= 0;
-	registerTable[MANUEL_SURE_SONU_ADR] 		= 0;
 	registerTable[DW_BUHAR_HAZIR_ANIM]			= 0;
 	registerTable[DW_ARIZA_ALARM_SUSTURMA_ADR]	= 0;
+
+	registerTable[REG_DW_MODE_INFO_ADR] = DW_ANA_SAYFA_ENTER;
 
 	data = 0;
 
@@ -3227,16 +3790,31 @@ void DWIN_resetManuelPisirme(void)
 	DWIN_writeRegiser(&data, DW_TURBO_ADR, sizeof(data));
 	DWIN_writeRegiser(&data, DW_ALT_SICAKLIK_ANIM, sizeof(data));
 	DWIN_writeRegiser(&data, DW_UST_SICAKLIK_ANIM, sizeof(data));
-	DWIN_writeRegiser(&data, DW_UST_ON_ANIM, sizeof(data));
-	DWIN_writeRegiser(&data, DW_UST_ARKA_ANIM, sizeof(data));
-	DWIN_writeRegiser(&data, DW_ALT_ANIM, sizeof(data));
+	DWIN_writeRegiser(&data, DW_SURE_SONU_ALARM_ANIM_ADR, sizeof(data));
 	DWIN_writeRegiser(&data, DW_ARIZA_ALARM_SUSTURMA_ADR, sizeof(data));
 	DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
 }
 
 void DWIN_arızaCheck(void)
 {
-	if((temp.TC2 >= 400) && (registerTable[DW_TC2_ARIZA_ADR] != 1))
+	if((temp.TC1 >= 400) && (registerTable[DW_TC1_ARIZA_ADR] != 1) && (registerTable[DW_PARAM_BUHAR_SENSOR_TYPE_ADR] == DW_BUHAR_SENSOR_KUPL_VAL))
+	{
+		SEGGER_RTT_printf(0, "TC1 Arizasi ! \r\n");
+		registerTable[DW_TC1_ARIZA_ADR] = 1;
+		uint16_t data = 1;
+		DWIN_writeRegiser(&data, DW_TC1_ARIZA_ADR, sizeof(data));
+		STM32_RequestBufferWrite(&data, DW_TC1_ARIZA_ADR, sizeof(data));
+	}
+
+	if(((registerTable[DW_PARAM_BUHAR_SENSOR_TYPE_ADR] == DW_BUHAR_SENSOR_TAT_VAL)||(temp.TC1 < 400)) && (registerTable[DW_TC1_ARIZA_ADR] != 0))
+	{
+		registerTable[DW_TC1_ARIZA_ADR] = 0;
+		uint16_t data = 0;
+		DWIN_writeRegiser(&data, DW_TC1_ARIZA_ADR, sizeof(data));
+		STM32_RequestBufferWrite(&data, DW_TC1_ARIZA_ADR, sizeof(data));
+	}
+
+	if((temp.TC2 >= 400) && (registerTable[DW_TC2_ARIZA_ADR] != 1) && (registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 1))
 	{
 		SEGGER_RTT_printf(0, "TC2 Arizasi ! \r\n");
 		registerTable[DW_TC2_ARIZA_ADR] = 1;
@@ -3245,7 +3823,7 @@ void DWIN_arızaCheck(void)
 		STM32_RequestBufferWrite(&data, DW_TC2_ARIZA_ADR, sizeof(data));
 	}
 
-	if((temp.TC2 < 400) && (registerTable[DW_TC2_ARIZA_ADR] != 0))
+	if(((registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)||(temp.TC2 < 400)) && (registerTable[DW_TC2_ARIZA_ADR] != 0))
 	{
 		registerTable[DW_TC2_ARIZA_ADR] = 0;
 		uint16_t data = 0;
@@ -3287,7 +3865,10 @@ void DWIN_arızaCheck(void)
 		STM32_RequestBufferWrite(&data, DW_ASIRI_SICAKLIK_ARIZA_ADR, sizeof(data));
 	}
 
-	if(((registerTable[DW_TC2_ARIZA_ADR] == 1) || (registerTable[DW_TC3_ARIZA_ADR] == 1) || (registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] == 1))&&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
+	if((	(registerTable[DW_TC1_ARIZA_ADR] == 1) ||
+			(registerTable[DW_TC2_ARIZA_ADR] == 1) ||
+			(registerTable[DW_TC3_ARIZA_ADR] == 1) ||
+			(registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] == 1)) &&(registerTable[DW_ARIZA_PAGE_ADR] != 1))
 	{
 		registerTable[DW_ARIZA_PAGE_ADR] = 1;
 		DWIN_changePage(DW_ARIZA_PAGE_ADR);
@@ -3297,20 +3878,55 @@ void DWIN_arızaCheck(void)
 		alarmBuzzerPeriod = 200;
 	}
 
-	if((registerTable[DW_TC2_ARIZA_ADR] == 0) && (registerTable[DW_TC3_ARIZA_ADR] == 0) && (registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] == 0) && (registerTable[DW_ARIZA_PAGE_ADR] != 0))
+	if((registerTable[DW_TC1_ARIZA_ADR] == 0) && (registerTable[DW_TC2_ARIZA_ADR] == 0) && (registerTable[DW_TC3_ARIZA_ADR] == 0) && (registerTable[DW_ASIRI_SICAKLIK_ARIZA_ADR] == 0) && (registerTable[DW_ARIZA_PAGE_ADR] != 0))
 	{
 		registerTable[DW_ARIZA_PAGE_ADR] = 0;
 		registerTable[DW_ARIZA_ALARM_SUSTURMA_ADR] = 0;
+
 		uint16_t data = 0;
 		DWIN_writeRegiser(&data, DW_ARIZA_ALARM_SUSTURMA_ADR, sizeof(data));
 
 		if(registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)
-			DWIN_changePage(DW_PISIRME_PAGE_ADR);
+		{
+			if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+			{
+				if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+					DWIN_changePage(DW_PAGE_MANUEL_BUHARYOK_TEKTC_ADR);			// Manuel - tek tc buhar yok
+
+				else
+					DWIN_changePage(DW_PAGE_MANUEL_BUHARVAR_TEKTC_ADR);			// Manuel - tek tc buhar var
+			}
+			else
+			{
+				if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+					DWIN_changePage(DW_PAGE_MANUEL_BUHARYOK_CIFTTC_ADR);			// Manuel - cift tc buhar yok
+
+				else
+					DWIN_changePage(DW_PAGE_MANUEL_BUHARVAR_CIFTTC_ADR);			// Manuel - cift tc buhar var
+			}
+		}
 		else if(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER)
-			DWIN_changePage(DW_RECETE_PISIRME_PAGE_ADR);
+		{
+			if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+			{
+				if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+					DWIN_changePage(DW_PAGE_RECETE_BUHARYOK_TEKTC_ADR);			// Manuel - tek tc buhar yok
+
+				else
+					DWIN_changePage(DW_PAGE_RECETE_BUHARVAR_TEKTC_ADR);			// Manuel - tek tc buhar var
+			}
+			else
+			{
+				if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+					DWIN_changePage(DW_PAGE_RECETE_BUHARYOK_CIFTTC_ADR);			// Manuel - cift tc buhar yok
+
+				else
+					DWIN_changePage(DW_PAGE_RECETE_BUHARVAR_CIFTTC_ADR);			// Manuel - cift tc buhar var
+			}
+		}
 
 
-		if(registerTable[MANUEL_SURE_SONU_ADR] != 1)
+		if(registerTable[DW_SURE_SONU_ALARM_ANIM_ADR] != 1)
 		{
 
 			pisirmeSonuAlarmFlag = 0;
@@ -3320,12 +3936,10 @@ void DWIN_arızaCheck(void)
 		}
 		alarmBuzzerPeriod = 1000;
 
-		if(registerTable[MANUEL_SURE_SONU_ADR] == 1)
+		if(registerTable[DW_SURE_SONU_ALARM_ANIM_ADR] == 1)
 		{
-			if(registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)
-				DWIN_changePage(MANUEL_SURE_SONU_ADR);
-			else if(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER)
-				DWIN_changePage(RECETE_SURE_SONU_ADR);
+			data = 1;
+			DWIN_writeRegiser(&data, DW_SURE_SONU_ALARM_ANIM_ADR, sizeof(data));
 		}
 
 
@@ -3390,5 +4004,96 @@ void DWIN_readRTC(uint8_t* saniye, uint8_t* dakika, uint8_t* saat, uint8_t* haft
 	*saat 	= readBuffer[4];
 	*dakika = readBuffer[5];
 	*saniye = readBuffer[6];
+}
+
+void PWM_SetFreqAndDuty(uint32_t freq_hz, uint8_t duty_percent)
+{
+    uint32_t timer_clk = HAL_RCC_GetPCLK2Freq();
+
+    if ((RCC->CFGR & RCC_CFGR_PPRE2) != RCC_CFGR_PPRE2_DIV1)
+        timer_clk *= 2;
+
+    uint32_t prescaler = htim1.Init.Prescaler + 1;
+
+    uint32_t arr = (timer_clk / (prescaler * freq_hz)) - 1;
+
+    uint32_t ccr = ((arr + 1) * duty_percent) / 100;
+
+    __HAL_TIM_SET_AUTORELOAD(&htim1, arr);
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, ccr);
+}
+
+
+void PWM_StartSmoothTransition(uint32_t new_freq, uint8_t duty_percent) {
+    start_freq = current_freq; // Şu an kaçtaysak oradan başla
+    target_freq = new_freq;
+    current_duty = duty_percent;
+    tick_counter = 0;          // Sayacı sıfırla
+    is_transitioning = 1;      // Süreci başlat
+}
+
+void PWM_SmoothTask_1ms(void) {
+    if (is_transitioning) {
+        tick_counter++;
+
+        if (tick_counter <= 1000) {
+            // Ara frekans hesaplama: start + (fark * tick / 1000)
+            // Not: Çarpma işlemi uint32 sınırını aşmasın diye (int64_t) cast ediyoruz.
+            // STM32 için bu işlem float'tan çok daha hızlıdır.
+            int64_t delta = (int64_t)target_freq - (int64_t)start_freq;
+            current_freq = (uint32_t)((int64_t)start_freq + (delta * tick_counter) / 1000);
+
+            // PWM güncelleme
+            PWM_SetFreqAndDuty(current_freq, current_duty);
+        }
+
+        if (tick_counter >= 1000) {
+            // Garantiye al: Tam hedef değere eşitle ve dur
+            current_freq = target_freq;
+            PWM_SetFreqAndDuty(current_freq, current_duty);
+            is_transitioning = 0;
+            tick_counter = 0;
+        }
+    }
+}
+
+void setAnalogVoltage(float target_voltage, uint32_t Channel)
+{
+
+	// 2. Sabit Değerler
+	const float V_REF = 3.3f;               // MCU besleme gerilimi (DAC referansı)
+	float 		GAIN = 0; 					// Opamp Kazancı
+	const float MAX_DAC_VAL = 4095.0f;      // 12-bit DAC maksimum değeri
+
+	if(Channel == DAC_CHANNEL_1)
+	{
+		GAIN = 6.0;
+
+		if (target_voltage > 15.0f) {
+			target_voltage = 15.0f;
+		} else if (target_voltage < 0.0f) {
+			target_voltage = 0.0f;
+		}
+	}
+	else if(Channel == DAC_CHANNEL_2)
+	{
+		GAIN = 3.26;
+
+		if (target_voltage > 10.0f) {
+			target_voltage = 10.0f;
+		} else if (target_voltage < 0.0f) {
+			target_voltage = 0.0f;
+		}
+	}
+
+	// 3. İstenen 10V çıkış için, DAC'tan çıkması gereken hedef voltajı bul
+	float required_dac_voltage = target_voltage / GAIN;
+
+	// 4. Bu voltajı 0-4095 arasında bir dijital değere (RAW) çevir
+	// Formül: (İstenen_DAC_Voltajı / V_REF) * 4095
+	uint32_t dac_raw_value = (uint32_t)((required_dac_voltage / V_REF) * MAX_DAC_VAL);
+
+	// 5. Değeri DAC kanalına yazdır (Kanal 1 kullanıldığını varsayıyoruz, Kanal 2 ise değiştirin)
+	HAL_DAC_SetValue(&hdac, Channel, DAC_ALIGN_12B_R, dac_raw_value);
 }
 

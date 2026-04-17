@@ -709,7 +709,6 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 
 				DWIN_changePage(2);
 				setOut(K14, data);
-				DWIN_enterManuelProcess();
 			}
 
 			// sayfa degistirme komutu
@@ -822,41 +821,6 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 
 		break;
 
-		case DW_UST_ON_SET_ADR:
-
-			registerTable[DW_UST_ON_SET_ADR] = data;
-
-			DWIN_writeRegiser(&data, DW_UST_ON_SET_ADR, sizeof(data));
-
-			parse16BitTo8Bit(data, &data2[0], &data2[1]);
-			EEPROM_Write(&hi2c1, DW_UST_ON_SET_ADR, data2, sizeof(data2));
-
-
-		break;
-
-		case DW_UST_ARKA_SET_ADR:
-
-			registerTable[DW_UST_ARKA_SET_ADR] = data;
-
-			DWIN_writeRegiser(&data, DW_UST_ARKA_SET_ADR, sizeof(data));
-
-			parse16BitTo8Bit(data, &data2[0], &data2[1]);
-			EEPROM_Write(&hi2c1, DW_UST_ARKA_SET_ADR, data2, sizeof(data2));
-
-		break;
-
-		case DW_ALT_SET_ADR:
-
-			registerTable[DW_ALT_SET_ADR] = data;
-
-			DWIN_writeRegiser(&data, DW_ALT_SET_ADR, sizeof(data));
-
-			parse16BitTo8Bit(data, &data2[0], &data2[1]);
-			EEPROM_Write(&hi2c1, DW_ALT_SET_ADR, data2, sizeof(data2));
-
-
-		break;
-
 		case DW_PISIRME_SURESI_ADR:
 
 			registerTable[DW_PISIRME_SURESI_ADR] 		= data;
@@ -951,17 +915,17 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 
 		break;
 
-		case DW_ARIZA_ALARM_SUSTURMA_ADR:
+		case DW_SURE_SONU_ALARM_ANIM_ADR:
 
-			data = 1;
+			data = 0;
 
-			registerTable[DW_ARIZA_ALARM_SUSTURMA_ADR] = 1;
+			registerTable[DW_SURE_SONU_ALARM_ANIM_ADR] = data;
 
-			pisirmeSonuAlarmFlag = 0;
-			pisirmeSonuAlarmBuzzer = 0;
-			setOut(BUZZER, 0);
+			pisirmeSonuAlarmFlag = data;
+			pisirmeSonuAlarmBuzzer = data;
+			setOut(BUZZER, data);
 
-			DWIN_writeRegiser(&data, DW_ARIZA_ALARM_SUSTURMA_ADR, sizeof(data));
+			DWIN_writeRegiser(&data, DW_SURE_SONU_ALARM_ANIM_ADR, sizeof(data));
 
 		break;
 

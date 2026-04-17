@@ -20,20 +20,62 @@
 
 /*---------------------------- SAYFALAR ------------------------------*/
 
-#define MANUEL_SURE_SONU_ADR			0x53
-#define RECETE_SURE_SONU_ADR			0x54
+#define DW_ARIZA_PAGE_ADR					97
+#define DW_PISIRME_PAGE_ADR					2
 
-#define DW_ARIZA_PAGE_ADR				85
-#define DW_PISIRME_PAGE_ADR				2
+#define DW_CIHAZ_TEST_PAGE_ADR				100
 
-#define DW_PISIRME_DUZEN_PAGE1_ADR		38
-#define DW_PISIRME_DUZEN_PAGE2_ADR		37
-#define DW_PISIRME_DUZEN_PAGE3_ADR		35
-#define DW_PISIRME_DUZEN_PAGE4_ADR		32
+#define DW_PISIRME_DUZEN_PAGE1_ADR			38
+#define DW_PISIRME_DUZEN_PAGE2_ADR			37
+#define DW_PISIRME_DUZEN_PAGE3_ADR			35
+#define DW_PISIRME_DUZEN_PAGE4_ADR			32
 
-#define DW_RECETE_PISIRME_PAGE_ADR		82
+#define DW_EMPTY_PAGE_NUM					7
 
-#define DW_LOADING_PAGE_ADR				0xF100
+#define DW_PAGE_MANUEL_BUHARVAR_TEKTC_ADR	94
+#define DW_PAGE_MANUEL_BUHARVAR_CIFTTC_ADR	2
+#define DW_PAGE_MANUEL_BUHARYOK_CIFTTC_ADR	96
+#define DW_PAGE_MANUEL_BUHARYOK_TEKTC_ADR	95
+
+#define DW_PAGE_RECETE_BUHARVAR_TEKTC_ADR	84
+#define DW_PAGE_RECETE_BUHARYOK_TEKTC_ADR	85
+#define DW_PAGE_RECETE_BUHARVAR_CIFTTC_ADR	82
+#define DW_PAGE_RECETE_BUHARYOK_CIFTTC_ADR	83
+
+#define DW_RECETE_PISIRME_PAGE_ADR			82
+#define DW_AYARLAR_PAGE_ADR					86
+#define DW_ANA_PAGE_ADR						10
+
+#define DW_CIHAZ_TEST_PAGE_PSW				9905
+
+#define DW_LOADING_PAGE_ADR					0xF100
+
+/*---------------------------- TEST SAYFASI ------------------------------*/
+
+#define DW_TEST_TC1_ADR				0x2900
+#define DW_TEST_TC2_ADR				0x2901
+#define DW_TEST_TC3_ADR				0x2902
+
+#define DW_TEST_K1_ADR 				0x290B
+#define DW_TEST_BUZZER_ADR 			0x291C
+
+#define DW_TEST_HEPSINIAC_ADR 		0x291D
+#define DW_TEST_HEPSINIKAPAT_ADR 	0x291E
+
+#define DW_TEST_1KHZ_ADR			0x291F
+#define DW_TEST_2KHZ_ADR			0x2920
+#define DW_TEST_3KHZ_ADR			0x2921
+#define DW_TEST_4KHZ_ADR			0x2922
+
+#define DW_TEST_OUT2_3V_ADR			0x2923
+#define DW_TEST_OUT2_6V_ADR			0x2924
+#define DW_TEST_OUT2_9V_ADR			0x2925
+
+#define DW_TEST_OUT1_5V_ADR			0x2926
+#define DW_TEST_OUT1_10V_ADR		0x2927
+#define DW_TEST_OUT1_15V_ADR		0x2928
+
+#define DW_TEST_EXIT_ADR			0x2929
 
 /*--------------------------------- MODE INFO -------------------------------*/
 #define REG_DW_MODE_INFO_ADR			0x2000
@@ -44,6 +86,7 @@
 #define DW_RECETE_PISIRME_SAYFA_ENTER	3
 #define DW_RECETE_DUZEN_SAYFA_ENTER		4
 #define DW_OTOMATIK_ACMA_SAYFA_ENTER	5
+#define DW_CIHAZ_TEST_SAYFA_ENTER		6
 
 /*---------------------------- MANUEL SAYFASI ------------------------------*/
 
@@ -53,9 +96,6 @@
 
 #define DW_UST_SICAKLIK_SET_ADR			0x1000
 #define DW_ALT_SICAKLIK_SET_ADR			0x1002
-#define DW_UST_ON_SET_ADR				0x1004
-#define DW_UST_ARKA_SET_ADR				0x1006
-#define DW_ALT_SET_ADR					0x1008
 #define DW_PISIRME_SURESI_ADR			0x100A
 #define DW_PISIRME_SURESI_SN_ADR		0x100E
 #define DW_BUHAR_SURESI_ADR				0x100C
@@ -69,15 +109,16 @@
 #define DW_LAMBA_ADR					0x1019
 #define DW_TURBO_ADR					0x101A
 #define DW_PISIRME_ALARM_SUSTURMA_ADR	0x108A
-#define DW_BUTTON_SOUND_ADR				0x17AB
+
 
 /*------------------------------- ANIMSAYON ADDRESS  --------------------------------*/
 
 #define DW_UST_SICAKLIK_ANIM			0x101C
 #define DW_ALT_SICAKLIK_ANIM			0x101E
-#define DW_UST_ON_ANIM					0x1020
-#define DW_UST_ARKA_ANIM				0x1022
-#define DW_ALT_ANIM						0x1024
+#define DW_SURE_SONU_ALARM_ANIM_ADR		0x1020
+//#define DW_UST_ON_ANIM					0x1020
+//#define DW_UST_ARKA_ANIM				0x1022
+//#define DW_ALT_ANIM						0x1024
 #define DW_BUHAR_HAZIR_ANIM				0x1016
 
 /*---------------------------- ORTAK AYARLAMA SAYFASI	 ------------------------------*/
@@ -100,15 +141,41 @@
 /*---------------------------- PARAMETRELER SAYFASI	 ------------------------------*/
 
 #define DW_PARAMETRE_PAGE_ADR			0x17A8
-#define DW_PARAMETRE_PSW				7251
-#define DW_LAMBA_SURESI_ADR				0x17A9
-#define DW_BUHAR_ACTIVE_ADR				0x17AF
-#define DW_UST_ON_ISITICI_BANDI_ADR		0x17BC
-#define DW_UST_ARKA_ISITICI_BANDI_ADR	0x17BE
-#define DW_ALT_ISITICI_BANDI_ADR		0x17C0
-#define	DW_ISITICI_UST_HIS_ADR			0x17C2
-#define DW_ISITICI_ALT_HIS_ADR			0x17C4
-#define DW_ISITICI_PERIOD_ADR			0x17C6
+#define DW_PARAMETRE_EXIT_PAGE_ADR		0x17FA
+#define DW_PARAMETRE_DEFAULT_PSW		7251
+
+#define DW_PARAM_LAMBA_SURESI_ADR		0x17AA
+#define DW_PARAM_BUTTON_SOUND_ADR		0x17AC
+#define DW_PARAM_ALARM_ADR				0x17AE
+#define DW_PARAM_DIL_ADR				0x17B0
+#define DW_PARAM_PSW_ADR				0x17B2
+#define DW_PARAM_BUHAR_ACTIVE_ADR		0x17B4
+#define DW_PARAM_BUHAR_SENSOR_TYPE_ADR	0x17B6
+#define DW_PARAM_BUHAR_MAX_SET_ADR		0x17B8
+#define DW_PARAM_BUHAR_HAZIR_SICAK_ADR	0x17BA
+#define DW_PARAM_BUHAR_UST_HIS_ADR		0x17BC
+#define DW_PARAM_BUHAR_ALT_HIS_ADR		0x17BE
+#define DW_PARAM_CIHAZ_TYPE_ADR			0x17C0
+#define DW_PARAM_LOGO_ADR				0x17C2
+#define DW_PARAM_TERMOKUPL_TYPE_ADR		0x17FD
+#define DW_FARBRIKA_AYAR_PARAM_ADR		0x17FC
+
+
+
+#define DW_K_TYPE_TERMOKUP_VAL			1
+#define DW_J_TYPE_TERMOKUP_VAL			0
+
+#define DW_BUHAR_SENSOR_KUPL_VAL		0
+#define DW_BUHAR_SENSOR_TAT_VAL			1
+
+/*---------------------------- DIL ------------------------------*/
+
+#define DW_DIL_SABIT_YAZI_ADR			0x843A
+
+#define DW_DIL_TURKCE_VAL 				0
+#define DW_DIL_INGILIZCE_VAL 			1
+#define DW_DIL_RUSCA_VAL 				2
+#define DW_DIL_ALMANCA_VAL 				3
 
 /*---------------------------- ARIZA ALARM SAYFASI	 ------------------------------*/
 

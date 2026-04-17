@@ -19,10 +19,12 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
+#include "dac.h"
 #include "dma.h"
 #include "i2c.h"
 #include "rtc.h"
 #include "spi.h"
+#include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -38,8 +40,7 @@
 #include "USART_Process.h"
 #include "EEPROM_Process.h"
 #include "Bluetooth_Process.h"
-//#include "sht40.h"
-//#include "hdc1080.h"
+
 #include "TMP112.h"
 #include "PID_Control.h"
 #include "version.h"
@@ -232,6 +233,7 @@ HAL_StatusTypeDef Flash_Write(uint32_t address,
 
 uint32_t safeProgramWait_tick = 0;
 uint32_t safeProgramWait_flag = 0;
+
 void safeProgram_Declaration(void)
 {
 	if(safeProgramWait_flag == 0)
@@ -298,9 +300,13 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART3_UART_Init();
   MX_RTC_Init();
+  MX_DAC_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
 
+
   ShiftRegister_SendData(0);
+
   HAL_Delay(0);
   SEGGER_RTT_ConfigUpBuffer(0,NULL, NULL, 0, SEGGER_RTT_MODE_NO_BLOCK_SKIP);
   HAL_Delay(0);
@@ -365,12 +371,6 @@ int main(void)
 
 	  HAL_Delay(2000);
 
-	  ///////////////////////////////////////////////////////////////////
-	  uint8_t saniye,dakika,saat,gun,hafta,ay,yil;
-	  DWIN_readRTC(&saniye, &dakika, &saat, &hafta, &gun, &ay, &yil);
-	  RTC_SetDateTime(saat, dakika, saniye, gun, ay, yil);
-	  ///////////////////////////////////////////////////////////////////
-
 	  if(EEPROM_init(&hi2c1) != EE_INIT_OK)
 		  SEGGER_RTT_printf(0,"EEPROM Init Error ! \r\n");
 
@@ -379,7 +379,20 @@ int main(void)
 
 	  registerTable[STM32_VERSION_ADR] = FW_VERSION;
 
+	  HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
+	  HAL_DAC_Start(&hdac, DAC_CHANNEL_2);
+
+	  HAL_DAC_SetValue(&hdac,
+	                   DAC_CHANNEL_1,
+	                   DAC_ALIGN_12B_R,
+	                   0);
+	  HAL_DAC_SetValue(&hdac,
+	                   DAC_CHANNEL_2,
+	                   DAC_ALIGN_12B_R,
+	                   0);
+
 	  safeProgramWait_tick = HAL_GetTick();
+
 
 
   /* USER CODE END 2 */
@@ -434,7 +447,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV16;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV8;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
@@ -442,7 +455,7 @@ void SystemClock_Config(void)
   }
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_ADC;
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
-  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV4;
+  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV8;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
