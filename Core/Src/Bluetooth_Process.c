@@ -43,6 +43,8 @@ extern uint8_t ustOnTurbo 		;
 extern uint8_t ustArkaTurbo 	;
 extern uint8_t altTurbo			;
 
+extern uint16_t islemdekiReceteAdim;
+
 uint16_t ESP32_writeData[100];
 uint16_t ESP32_writeAmountAddress = 0;
 uint16_t ESP32_writeAddress = 0;
@@ -1318,6 +1320,81 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 						returnkeycode_change_structure(DW_PAGE_MANUEL_BUHARVAR_CIFTTC_ADR);			// Manuel - cift tc buhar var
 				}
 			}
+
+
+		break;
+
+		case APP_RECETE_PISIRME_START_ADR:
+
+			if((data>0)&&(data <= DW_RECETE_AMOUNT))
+			{
+				uint8_t recete_num = data;
+				uint16_t receteAdimSayisi 	= 	registerTable[APP_RECETE_ILK_ADR + ((recete_num - 1)*APP_RECETE_LENGTH) + (APP_RECETE_LENGTH - 1)];
+
+				registerTable[APP_RECETE_PISIRME_START_ADR] = recete_num;
+				registerTable[REG_DW_MODE_INFO_ADR] = DW_RECETE_PISIRME_SAYFA_ENTER;
+
+				islemdekiReceteAdim = 1;
+
+				for(int i=0;i<((EE_RECETE_DATA_SIZE/2)-2)/4;i++)
+				{
+					uint16_t recete_pisirme_param = registerTable[APP_RECETE_ILK_ADR + (((recete_num - 1)*APP_RECETE_LENGTH)) + i];
+					DWIN_writeRegiser(&recete_pisirme_param, DW_RECETE_PISIR_UST_SIC_SET_ADR + (i*2), sizeof(recete_pisirme_param));
+					registerTable[DW_RECETE_PISIR_UST_SIC_SET_ADR + (i*2)] = recete_pisirme_param;
+				}
+
+				uint16_t recete_pisirme_top_sure = 0;
+
+				for(int i=0;i<receteAdimSayisi;i++)
+					recete_pisirme_top_sure += registerTable[APP_RECETE_ILK_ADR + ((recete_num - 1)*APP_RECETE_LENGTH) + (i*7) + 5];
+
+				DWIN_writeRegiser(&recete_pisirme_top_sure, DW_RECETE_PISIR_SURE_ADR, sizeof(recete_pisirme_top_sure));
+
+				registerTable[DW_PISIRME_SURESI_ADR] = recete_pisirme_top_sure;
+				registerTable[DW_PISIRME_SURESI_ORT_ADR] 	= registerTable[DW_PISIRME_SURESI_ADR];
+				registerTable[DW_BUHAR_SURESI_ORT_ADR] 		= registerTable[DW_BUHAR_SURESI_ADR];
+
+				if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						DWIN_changePage(DW_PAGE_RECETE_BUHARYOK_TEKTC_ADR);			// Manuel - tek tc buhar yok
+
+					else
+						DWIN_changePage(DW_PAGE_RECETE_BUHARVAR_TEKTC_ADR);			// Manuel - tek tc buhar var
+				}
+				else
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						DWIN_changePage(DW_PAGE_RECETE_BUHARYOK_CIFTTC_ADR);			// Manuel - cift tc buhar yok
+
+					else
+						DWIN_changePage(DW_PAGE_RECETE_BUHARVAR_CIFTTC_ADR);			// Manuel - cift tc buhar var
+				}
+
+				uint16_t adim_anim_list[4]= {DW_RECETE_A1_ANIM_ADR,
+											DW_RECETE_A2_ANIM_ADR,
+											DW_RECETE_A3_ANIM_ADR,
+											DW_RECETE_A4_ANIM_ADR
+				};
+
+				uint16_t adim_anim_active_num[4]= {1,5,9,13};
+
+				for(int i=0;i<receteAdimSayisi;i++)
+				{
+					uint16_t writeData = adim_anim_active_num[i];
+					DWIN_writeRegiser(&writeData, adim_anim_list[i], sizeof(writeData));
+				}
+
+				for(int i=receteAdimSayisi;i<4;i++)
+				{
+					uint16_t writeData = 0x16;
+					DWIN_writeRegiser(&writeData, adim_anim_list[i], sizeof(writeData));
+				}
+
+				setOut(K14, data);
+				PID_Setup();
+			}
+
 
 
 		break;
