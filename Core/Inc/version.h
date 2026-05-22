@@ -8,6 +8,6 @@
 #ifndef INC_VERSION_H_
 #define INC_VERSION_H_
 
-#define FW_VERSION 103
+#define FW_VERSION 200
 
 #endif /* INC_VERSION_H_ */
