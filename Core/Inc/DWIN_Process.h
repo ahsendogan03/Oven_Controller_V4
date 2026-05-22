@@ -20,7 +20,7 @@
 #define READ_CMD 		0x83
 #define WRITE_CMD		0x82
 
-#define REGISTER_TABLE_SIZE   9000
+#define REGISTER_TABLE_SIZE   13000
 
 typedef enum
 {
@@ -92,10 +92,14 @@ DWIN_Response DWIN_buharActivePassive(uint8_t setMode);
 void DWIN_testSayfa(void);
 void setAnalogVoltage(float target_voltage, uint32_t Channel);
 void PWM_StartSmoothTransition(uint32_t new_freq, uint8_t duty_percent);
+void PWM_SetFreqAndDuty(uint32_t freq_hz, uint8_t duty_percent);
 void PWM_SmoothTask_1ms(void);
 void automaticOpeningVisualController(uint8_t dayNumber, uint8_t mode, uint8_t tcCount);
 void DWIN_change_buhar_settings(uint16_t setVal);
 void DWIN_change_cihaz_type_settings(uint16_t setVal);
 void DWIN_tcVisualController(uint8_t mode);
+void DWIN_dilChange(void);
+void returnkeycode_change_structure(uint16_t picNext);
+DWIN_Response touchSetOnOff_structure(uint16_t mode, uint16_t page , uint8_t controlID, uint8_t keyCode);
 
 #endif /* INC_DWIN_PROCESS_H_ */

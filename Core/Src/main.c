@@ -40,6 +40,7 @@
 #include "USART_Process.h"
 #include "EEPROM_Process.h"
 #include "Bluetooth_Process.h"
+#include "Flash_Process.h"
 
 #include "TMP112.h"
 #include "PID_Control.h"
@@ -56,35 +57,7 @@ extern I2C_HandleTypeDef hi2c1;
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define FLASH_PACKET_SIZE     	128 // byte
 
-
-#define FLASH_BASE_ADDR     	FLASH_BASE
-#define FLASH_END_ADDR			FLASH_BANK1_END
-
-#define FLASH_SECTOR_SIZE   	0x800U      // 2 KB
-
-#define SLOT_DATA_SIZE			96			// KB (max
-
-#define SLOT1_START_ADDR		0x08005000U
-#define SLOT1_START_SECTOR		10
-#define SLOT1_END_SECTOR		SLOT1_START_SECTOR + (SLOT_DATA_SIZE/2) - 1
-
-
-#if ((((SLOT_DATA_SIZE * 2)/2)*FLASH_SECTOR_SIZE) + 0x08005000U) < FLASH_END_ADDR
-#define SLOT2_START_ADDR	SLOT1_START_ADDR + ((SLOT_DATA_SIZE/2)*FLASH_SECTOR_SIZE)
-#define SLOT2_START_SECTOR		SLOT1_END_SECTOR + 1
-#define SLOT2_END_SECTOR		SLOT2_START_SECTOR + (SLOT_DATA_SIZE/2) - 1
-#endif
-
-#define FLASH_INFO_ADDR	SLOT1_START_ADDR - FLASH_SECTOR_SIZE
-#define FLASH_INFO_SECTOR (FLASH_INFO_ADDR - FLASH_BASE_ADDR) / FLASH_SECTOR_SIZE
-
-#define FLASH_INFO_CHECK_NUMBER	0x99
-
-#define FLASH_SECTOR_ADDR(sector) (FLASH_BASE_ADDR + ((sector) * FLASH_SECTOR_SIZE))
-
-#define SAFE_PROGRAM_DECL_WAIT	60000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -95,10 +68,7 @@ extern I2C_HandleTypeDef hi2c1;
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-extern uint16_t DWIN_version;
-extern usartInfo DWIN;
-extern usartInfo ESP32;
-extern uint32_t outputData;
+
 extern EEPROM_initResponse eepromStatus;
 extern TMP112 tmpSensor;
 //extern HDC1080 hdcSensor;
@@ -131,105 +101,7 @@ uint32_t BytesToUint32(const uint8_t *buf)
            (((uint32_t)buf[3]) << 24);
 }
 
-static HAL_StatusTypeDef Flash_IsAddressValid(uint32_t address, uint32_t length)
-{
-    if ((address % 4) != 0)
-        return HAL_ERROR;
 
-    uint32_t endAddr = address + (length * 4);
-
-    if (address < FLASH_BASE_ADDR || endAddr > FLASH_END_ADDR)
-        return HAL_ERROR;
-
-    return HAL_OK;
-}
-
-HAL_StatusTypeDef Flash_Erase_Sector(uint32_t sectorNumber)
-{
-    FLASH_EraseInitTypeDef eraseInit;
-    uint32_t pageError;
-
-    uint32_t sectorAddress = FLASH_SECTOR_ADDR(sectorNumber);
-
-    HAL_FLASH_Unlock();
-
-    eraseInit.TypeErase   = FLASH_TYPEERASE_PAGES;
-    eraseInit.PageAddress = sectorAddress;
-    eraseInit.NbPages     = 1;
-
-    HAL_StatusTypeDef status = HAL_FLASHEx_Erase(&eraseInit, &pageError);
-
-    HAL_FLASH_Lock();
-
-    return status;
-}
-
-HAL_StatusTypeDef Flash_Read(uint32_t address,
-                             uint8_t *data,
-                             uint32_t length)
-{
-    /* Parametre kontrolleri */
-    if (data == NULL || length == 0)
-        return HAL_ERROR;
-
-    /* Flash adres aralığı kontrolü */
-    if (Flash_IsAddressValid(address, length) != HAL_OK)
-        return HAL_ERROR;
-
-    /* Okuma */
-    for (uint32_t i = 0; i < length; i++)
-    {
-        data[i] = *(volatile uint8_t *)(address + i);
-    }
-
-    return HAL_OK;
-}
-
-
-
-HAL_StatusTypeDef Flash_Write(uint32_t address,
-                              uint32_t *data,
-                              uint32_t length)
-{
-    HAL_StatusTypeDef status;
-
-    if (data == NULL)
-        return HAL_ERROR;
-
-    if (Flash_IsAddressValid(address, length) != HAL_OK)
-        return HAL_ERROR;
-
-    HAL_FLASH_Unlock();
-
-    for (uint32_t i = 0; i < length; i++)
-    {
-        status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD,
-                                   address + (i * 4),
-                                   data[i]);
-
-        if (status != HAL_OK)
-        {
-            HAL_FLASH_Lock();
-            return HAL_ERROR;
-        }
-    }
-
-    HAL_FLASH_Lock();
-
-    /* ===== VERIFY ===== */
-    for (uint32_t i = 0; i < length; i++)
-    {
-        uint32_t flashData =
-            *(volatile uint32_t *)(address + (i * 4));
-
-        if (flashData != data[i])
-        {
-            return HAL_ERROR;
-        }
-    }
-
-    return HAL_OK;
-}
 
 uint32_t safeProgramWait_tick = 0;
 uint32_t safeProgramWait_flag = 0;
@@ -246,11 +118,11 @@ void safeProgram_Declaration(void)
 
 			if(Flash_Read(FLASH_INFO_ADDR, flash_info_read, sizeof(flash_info_read)) != HAL_OK)
 			{
-				SEGGER_RTT_printf(0,"FLASH Error \r\n");
+				SEGGER_RTT_printf(0,"safeProgram_Declaration() -> Flash_Read Error \r\n");
 				return;
 			}
 
-			flash_info_read[2] = 0;						// Maximum hatalı program sayacı sıfırlanıyor
+			flash_info_read[0] = 0;	// Maximum hatalı program sayacı sıfırlanıyor
 
 			if(Flash_Erase_Sector(FLASH_INFO_SECTOR) != HAL_OK)
 				return;
@@ -312,6 +184,10 @@ int main(void)
   HAL_Delay(0);
   SEGGER_RTT_printf(0,"-------- SYSTEM START -------- \r\n");
 
+  PWM_SetFreqAndDuty(0, 50);
+
+  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
+
   HAL_GPIO_WritePin(OE_PORT, OE_PIN, 1);
 
 	  for(int i=0;i<6;i++)
@@ -350,21 +226,11 @@ int main(void)
 	  }
 
 	  if(TMP112_Init(&tmpSensor, &hi2c1) == HAL_OK)
-	  {
-		  // 12-bit çözünürlük ayarla
 		  TMP112_SetResolution(&tmpSensor, TMP112_RESOLUTION_12_BIT);
 
-		  // Shutdown modunu etkinleştir
-		  //TMP112_EnableShutdownMode(&mySensor, 1);
-
-		  // Tek seferlik ölçüm başlat
-		  //TMP112_TriggerOneShot(&mySensor);
-	  }
-
 	  else
-	  {
 		  SEGGER_RTT_printf(0,"TMP112 Init ERROR ! \r\n");
-	  }
+
 
 	  memset(registerTable,0,sizeof(registerTable));
 
@@ -376,8 +242,6 @@ int main(void)
 
 
 	  HAL_RTCEx_SetSecond_IT(&hrtc);
-
-	  registerTable[STM32_VERSION_ADR] = FW_VERSION;
 
 	  HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
 	  HAL_DAC_Start(&hdac, DAC_CHANNEL_2);

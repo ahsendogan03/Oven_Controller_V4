@@ -12,10 +12,6 @@
 
 
 #define STM32_OTA_BEGIN_ADR 100
-#define STM32_VERSION_ADR 	101
-
-#define BLE_DVC_CONN_ADR  	3000
-#define BLE_DVC_LOCK_ADR  	3001
 
 
 /*---------------------------- SAYFALAR ------------------------------*/
@@ -49,6 +45,12 @@
 #define DW_CIHAZ_TEST_PAGE_PSW				9905
 
 #define DW_LOADING_PAGE_ADR					0xF100
+#define DW_EKRAN_PROG_CHECK_ADR				0x7995
+
+
+
+#define DW_EKRAN_PROG_MASTER_VAL			1
+#define DW_EKRAN_PROG_CONV_VAL				2
 
 /*---------------------------- TEST SAYFASI ------------------------------*/
 
@@ -78,6 +80,7 @@
 #define DW_TEST_EXIT_ADR			0x2929
 
 /*--------------------------------- MODE INFO -------------------------------*/
+
 #define REG_DW_MODE_INFO_ADR			0x2000
 
 #define DW_ANA_SAYFA_ENTER				0
@@ -99,7 +102,7 @@
 #define DW_PISIRME_SURESI_ADR			0x100A
 #define DW_PISIRME_SURESI_SN_ADR		0x100E
 #define DW_BUHAR_SURESI_ADR				0x100C
-#define DW_MCP9700_ADR					0x100F
+#define DW_TMP112_ADR					0x100F
 #define DW_UST_SICAKLIK_ADR				0x1010
 #define DW_ALT_SICAKLIK_ADR				0x1011
 #define DW_PISIRME_BASLATMA_ADR			0x1012
@@ -140,6 +143,8 @@
 
 /*---------------------------- PARAMETRELER SAYFASI	 ------------------------------*/
 
+#define DW_FW_VERSION_ADR				0x17E0
+
 #define DW_PARAMETRE_PAGE_ADR			0x17A8
 #define DW_PARAMETRE_EXIT_PAGE_ADR		0x17FA
 #define DW_PARAMETRE_DEFAULT_PSW		7251
@@ -157,6 +162,7 @@
 #define DW_PARAM_BUHAR_ALT_HIS_ADR		0x17BE
 #define DW_PARAM_CIHAZ_TYPE_ADR			0x17C0
 #define DW_PARAM_LOGO_ADR				0x17C2
+#define DW_PARAM_LOGO_CNT_ADR			0x177C
 #define DW_PARAM_TERMOKUPL_TYPE_ADR		0x17FD
 #define DW_FARBRIKA_AYAR_PARAM_ADR		0x17FC
 
@@ -167,6 +173,12 @@
 
 #define DW_BUHAR_SENSOR_KUPL_VAL		0
 #define DW_BUHAR_SENSOR_TAT_VAL			1
+
+/*---------------------------- BLUETOOTH SAYFASI	 ------------------------------*/
+
+#define DW_BLE_NAME_START_ADR			0x17C4
+#define DW_BLE_PSW_START_ADR			0x17DE
+#define DW_QR_CODE_ADR					0x75BB
 
 /*---------------------------- DIL ------------------------------*/
 
@@ -192,7 +204,7 @@
 #define DW_RECETE_SAYFA_ENTER_ADR		0x2800
 #define DW_RECETE_CIKIS_CMD				0x107F
 #define DW_RECETE_AMOUNT				100
-#define DW_RECETE_ISIM_SIZE				20
+#define DW_RECETE_ISIM_SIZE				10
 #define DW_RECETE_RESIM_ILK_ADR			0x10FB
 #define DW_RECETE_ISIM_ILK_ADR			0x115F
 
@@ -220,6 +232,10 @@
 #define DW_RECETE_A3_ANIM_ADR			0x1086
 #define DW_RECETE_A4_ANIM_ADR			0x1088
 
+#define APP_RECETE_ILK_ADR				0x2328
+#define APP_RECETE_LENGTH				35
+#define APP_RECETE_PISIRME_START_ADR	0x2327
+
 /*--------------------------------- TARIH/SAAT -----------------------------------*/
 #define DW_TARIH_SAAT_PAGE_ENTER_ADR	0x2500
 #define DW_FIRST_WRITE_RTC_ADR			0x009C
@@ -246,6 +262,19 @@
 #define DW_OTOMATIK_ISIM_ILK_ADR		0x1589
 #define DW_OTOMATIK_PISIRME_INFO_ADR	0x1595
 #define DW_OTOMATIK_AKTIF_INFO_ADR		0x1597
+
+#define APP_OTOMATIK_ACMA_ILK_ADR		0x1F38
+
+#define APP_OTOMATIK_ACMA_SAAT_ADR			0x1F38
+#define APP_OTOMATIK_ACMA_MIN_ADR			0x1F39
+#define APP_OTOMATIK_UST_SICAKLIK_ADR		0x1F3A
+#define APP_OTOMATIK_ALT_SICAKLIK_ADR		0x1F3B
+#define APP_OTOMATIK_BUHAR_ADR				0x1F3C
+#define APP_OTOMATIK_PISIRME_INFO_ADR		0x1F3D
+#define APP_OTOMATIK_PISIRME_AKTIF_ADR		0x1F3E
+#define APP_OTOMATIK_PISIRME_RECETE_NUM_ADR	0x1F3F
+
+
 
 #define DW_OTOMATIK_MANUEL_PISIRME		1
 #define DW_OTOMATIK_RECETE_PISIRME		2

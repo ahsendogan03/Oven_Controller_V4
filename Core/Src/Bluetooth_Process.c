@@ -13,6 +13,9 @@
 #include "InOut_Process.h"
 #include "EEPROM_Process.h"
 #include "DWIN_Adress.h"
+#include "stdio.h"
+#include "PID_Control.h"
+#include "rtc.h"
 
 #define MEM_READ_32(addr) (*(volatile uint32_t *)(addr))
 
@@ -54,6 +57,23 @@ uint16_t stm32RequestData[100] 	= {0};
 uint16_t stm32RequestAddr 		= 0;
 uint8_t stm32RequestLength 		= 0;
 uint32_t stm32RequestPeriodTick = 0;
+
+uint8_t otomatikAcmaWriteCheck = 0;
+uint16_t receteDuzenlemeAdr = 0;
+
+void hexToString(const uint8_t *input, uint16_t inputLen, uint8_t *output)
+{
+    uint16_t i;
+
+    for(i = 0; i < inputLen; i++)
+    {
+        // Her byte'ı 2 karakterlik HEX stringe çevir
+        sprintf((char *)&output[i * 2], "%02X", input[i]);
+    }
+
+    // String sonlandırıcı
+    output[inputLen * 2] = '\0';
+}
 
 HAL_StatusTypeDef ESP32_SetUsartChannel(UART_HandleTypeDef *huart, USART_TypeDef *Declaration, DMA_HandleTypeDef *hdma)
 {
@@ -410,7 +430,7 @@ void Bluetooth_Check(void)
 		ESP32_receiveDataProcess();
 	}
 
-    if (HAL_GetTick() - counterTick.bluetoothCheck > BLUETOOTH_TIMEOUT_MS)
+    if ((HAL_GetTick() - counterTick.bluetoothCheck > BLUETOOTH_TIMEOUT_MS) && (registerTable[BLE_DVC_INFO_UPDATE_ADR] == 0))
     {
     	counterTick.bluetoothCheck = HAL_GetTick();
 
@@ -440,19 +460,6 @@ void Bluetooth_Check(void)
     }
 }
 
-void Bluetooth_writeRegister(void)
-{
-	if(ESP32_writeAmountAddress > 0)
-	{
-		for(int i=0;i<ESP32_writeAmountAddress;i++)
-		{
-			Bluetooth_dwinWrite(ESP32_writeAddress, ESP32_writeData[i]);
-		}
-
-		ESP32_writeAmountAddress = 0;
-		memset(ESP32_writeData,0,sizeof(ESP32_writeData));
-	}
-}
 
 void STM32_RequestReadyCounter(void)
 {
@@ -659,6 +666,90 @@ ESP32_Response ESP32_writeRegister(uint16_t* pBuffer, uint16_t addr, uint8_t len
 
 	return response;
 }
+
+void BLE_otomatikAcmaWriteProcess(void)
+{
+
+	uint16_t defaultOtomatik_allData_u16[(EE_OTOMATIK_ACMA_PARAM_SIZE/2) * 7] = {0};
+	uint8_t defaultOtomatik_allData_u8[EE_OTOMATIK_ACMA_PARAM_SIZE * 7] = {0};
+
+	for(int i=0;i<((EE_OTOMATIK_ACMA_PARAM_SIZE/2) * 7);i++)
+		defaultOtomatik_allData_u16[i] = registerTable[APP_OTOMATIK_ACMA_SAAT_ADR + i];
+
+	convert_u16_to_u8(defaultOtomatik_allData_u16, defaultOtomatik_allData_u8, sizeof(defaultOtomatik_allData_u8));
+
+
+	if(EEPROM_Write(&hi2c1, EE_OTOMATIK_ACMA_ILK_ADR, defaultOtomatik_allData_u8, sizeof(defaultOtomatik_allData_u8)) != EE_WRITE_OK)
+		SEGGER_RTT_printf(0,"BLE_otomatikAcmaWriteProcess -> EEPROM_Write ERR! \r\n");
+	else
+		EEPROM_OtomatikAcma_Read(&hi2c1);
+
+}
+
+void BLE_receteDuzenlemeProcess(void)
+{
+	uint8_t receteNum = ((receteDuzenlemeAdr - APP_RECETE_ILK_ADR) + 1) / APP_RECETE_LENGTH;
+
+	uint16_t receteParamData_u16[(EE_RECETE_DATA_SIZE / 2) + (DW_RECETE_ISIM_SIZE / 2)] = {0};
+	uint8_t receteParamData_u8[EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE] = {0};
+
+	for(int i=0;i<((EE_RECETE_DATA_SIZE / 2) + (DW_RECETE_ISIM_SIZE / 2));i++)
+		receteParamData_u16[i] = registerTable[APP_RECETE_ILK_ADR + ((receteNum - 1) * APP_RECETE_LENGTH) + i];
+
+	convert_u16_to_u8(receteParamData_u16, receteParamData_u8, sizeof(receteParamData_u16));
+
+	if(EEPROM_Write(&hi2c1, EE_RECETE_ILK_ADR + ((receteNum - 1) * (EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), receteParamData_u8, sizeof(receteParamData_u8)) != EE_WRITE_OK)
+		SEGGER_RTT_printf(0,"BLE_receteDuzenlemeProcess -> EEPROM_Write ERR! \r\n");
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	uint16_t recete_isim_data_u16[DW_RECETE_ISIM_SIZE/2] = {0};
+
+	for(int i=0;i<(DW_RECETE_ISIM_SIZE/2);i++)
+		recete_isim_data_u16[i] = registerTable[APP_RECETE_ILK_ADR + ((receteNum - 1) * APP_RECETE_LENGTH) + ((EE_RECETE_DATA_SIZE/2) - 2) + i];
+
+	DWIN_writeRegiser(recete_isim_data_u16, DW_RECETE_ISIM_ILK_ADR + ((receteNum - 1)*(DW_RECETE_ISIM_SIZE)), sizeof(recete_isim_data_u16)); // Her seferinde 10 register atlanıyor
+
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	uint16_t recete_resim_data_u16 = registerTable[APP_RECETE_ILK_ADR + ((receteNum - 1) * APP_RECETE_LENGTH) + (APP_RECETE_LENGTH - 2)];
+
+	DWIN_writeRegiser(&recete_resim_data_u16, DW_RECETE_RESIM_ILK_ADR + (receteNum - 1), sizeof(recete_resim_data_u16));
+
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}
+
+void Bluetooth_writeRegister(void)
+{
+	if(ESP32_writeAmountAddress > 0)
+	{
+		for(int i=0;i<ESP32_writeAmountAddress;i++)
+		{
+			Bluetooth_dwinWrite(ESP32_writeAddress + i, ESP32_writeData[i]);
+		}
+
+		ESP32_writeAmountAddress = 0;
+		memset(ESP32_writeData,0,sizeof(ESP32_writeData));
+	}
+
+	else if(otomatikAcmaWriteCheck > 0)
+	{
+		BLE_otomatikAcmaWriteProcess();
+
+		otomatikAcmaWriteCheck = 0;
+	}
+
+	else if(receteDuzenlemeAdr > 0)
+	{
+		if((((receteDuzenlemeAdr - APP_RECETE_ILK_ADR) + 1) % APP_RECETE_LENGTH) == 0)
+			BLE_receteDuzenlemeProcess();
+		else
+			SEGGER_RTT_printf(0,"Bluetooth_writeRegister -> ReceteDuzenleme WRONG ADR! \r\n");
+
+		receteDuzenlemeAdr = 0;
+	}
+}
+
 void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 {
 	uint16_t data = value;
@@ -707,12 +798,10 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 			{
 				registerTable[REG_DW_MODE_INFO_ADR] = DW_MANUEL_MODE_ENTER;
 
+				PID_Setup();
 				DWIN_changePage(2);
 				setOut(K14, data);
 			}
-
-			// sayfa degistirme komutu
-
 
 
 		break;
@@ -884,18 +973,22 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 				DWIN_writeRegiser(&data, DW_PISIRME_BASLATMA_ADR, sizeof(data));
 				DWIN_writeRegiser(&data, DW_PISIRME_SONLANDIRMA_ADR, sizeof(data));
 
-				//DWIN_resetManuelPisirme();
 			}
 
-			//DWIN_resetManuelPisirme();
 
 		break;
 
-		case DW_PISIRME_ALARM_SUSTURMA_ADR:
 
-			pisirmeSonuAlarmFlag = 0;
-			pisirmeSonuAlarmBuzzer = 0;
-			setOut(BUZZER, 0);
+		case DW_SURE_SONU_ALARM_ANIM_ADR:
+
+			data = 0;
+
+			registerTable[DW_SURE_SONU_ALARM_ANIM_ADR] = data;
+
+			pisirmeSonuAlarmFlag = data;
+			pisirmeSonuAlarmBuzzer = data;
+			setOut(BUZZER, data);
+			setOut(K10, data);
 
 			registerTable[DW_PISIRME_BASLATMA_ADR] = 0;
 
@@ -910,22 +1003,395 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 			DWIN_writeRegiser(&data, DW_PISIRME_SURESI_SN_ADR, sizeof(data));
 			DWIN_writeRegiser(&data, DW_PISIRME_BASLATMA_ADR, sizeof(data));
 			DWIN_writeRegiser(&data, DW_PISIRME_SONLANDIRMA_ADR, sizeof(data));
+			DWIN_writeRegiser(&data, DW_SURE_SONU_ALARM_ANIM_ADR, sizeof(data));
 
-			//DWIN_resetManuelPisirme();
+			if(registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)
+			{
+				if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						touchSetOnOff_structure(0,95,0,5);			// Manuel - tek tc buhar yok
+
+					else
+						touchSetOnOff_structure(0,94,0,5);			// Manuel - tek tc buhar var
+				}
+				else
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						touchSetOnOff_structure(0,96,0,5);			// Manuel - cift tc buhar yok
+
+					else
+						touchSetOnOff_structure(0,2,0,5);			// Manuel - cift tc buhar var
+				}
+			}
+			else if(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER)
+			{
+				if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						touchSetOnOff_structure(0,85,0,5);			// Recete - tek tc buhar yok
+
+					else
+						touchSetOnOff_structure(0,84,0,5);			// Recete - tek tc buhar var
+				}
+				else
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						touchSetOnOff_structure(0,83,0,5);			// Recete - cift tc buhar yok
+
+					else
+						touchSetOnOff_structure(0,82,0,5);			// Recete - cift tc buhar var
+				}
+			}
 
 		break;
 
-		case DW_SURE_SONU_ALARM_ANIM_ADR:
+		case DW_PARAM_LAMBA_SURESI_ADR:
 
-			data = 0;
+			registerTable[DW_PARAM_LAMBA_SURESI_ADR] = data;
 
-			registerTable[DW_SURE_SONU_ALARM_ANIM_ADR] = data;
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
 
-			pisirmeSonuAlarmFlag = data;
-			pisirmeSonuAlarmBuzzer = data;
-			setOut(BUZZER, data);
+			EEPROM_Write(&hi2c1, DW_PARAM_LAMBA_SURESI_ADR, data2, sizeof(data2));
 
-			DWIN_writeRegiser(&data, DW_SURE_SONU_ALARM_ANIM_ADR, sizeof(data));
+			DWIN_writeRegiser(&data, DW_PARAM_LAMBA_SURESI_ADR, sizeof(data));
+
+		break;
+
+
+		case DW_PARAM_BUTTON_SOUND_ADR:
+
+			registerTable[DW_PARAM_BUTTON_SOUND_ADR] = data;
+
+			if(data == 1)
+				DWIN_buzzerSet(1);
+			else
+				DWIN_buzzerSet(0);
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_BUTTON_SOUND_ADR, data2, sizeof(data2));
+
+			DWIN_writeRegiser(&data, DW_PARAM_BUTTON_SOUND_ADR, sizeof(data));
+
+
+		break;
+
+		case DW_PARAM_ALARM_ADR:
+
+			registerTable[DW_PARAM_ALARM_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_ALARM_ADR, data2, sizeof(data2));
+
+			DWIN_writeRegiser(&data, DW_PARAM_ALARM_ADR, sizeof(data));
+
+		break;
+
+		case DW_PARAM_PSW_ADR:
+
+			registerTable[DW_PARAM_PSW_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_PSW_ADR, data2, sizeof(data2));
+
+			DWIN_writeRegiser(&data, DW_PARAM_PSW_ADR, sizeof(data));
+
+		break;
+
+
+		case DW_PARAM_BUHAR_SENSOR_TYPE_ADR:
+
+			registerTable[DW_PARAM_BUHAR_SENSOR_TYPE_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_BUHAR_SENSOR_TYPE_ADR, data2, sizeof(data2));
+
+			DWIN_writeRegiser(&data, DW_PARAM_BUHAR_SENSOR_TYPE_ADR, sizeof(data));
+
+		break;
+
+
+		case DW_PARAM_BUHAR_MAX_SET_ADR:
+
+			registerTable[DW_PARAM_BUHAR_MAX_SET_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_BUHAR_MAX_SET_ADR, data2, sizeof(data2));
+
+			DWIN_writeRegiser(&data, DW_PARAM_BUHAR_MAX_SET_ADR, sizeof(data));
+
+		break;
+
+		case DW_PARAM_BUHAR_HAZIR_SICAK_ADR:
+
+			registerTable[DW_PARAM_BUHAR_HAZIR_SICAK_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_BUHAR_HAZIR_SICAK_ADR, data2, sizeof(data2));
+
+			DWIN_writeRegiser(&data, DW_PARAM_BUHAR_HAZIR_SICAK_ADR, sizeof(data));
+
+		break;
+
+		case DW_PARAM_BUHAR_UST_HIS_ADR:
+
+			registerTable[DW_PARAM_BUHAR_UST_HIS_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_BUHAR_UST_HIS_ADR, data2, sizeof(data2));
+
+			DWIN_writeRegiser(&data, DW_PARAM_BUHAR_UST_HIS_ADR, sizeof(data));
+
+		break;
+
+		case DW_PARAM_BUHAR_ALT_HIS_ADR:
+
+			registerTable[DW_PARAM_BUHAR_ALT_HIS_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_BUHAR_ALT_HIS_ADR, data2, sizeof(data2));
+
+			DWIN_writeRegiser(&data, DW_PARAM_BUHAR_ALT_HIS_ADR, sizeof(data));
+
+		break;
+
+		case DW_PARAM_TERMOKUPL_TYPE_ADR:
+
+			registerTable[DW_PARAM_TERMOKUPL_TYPE_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_TERMOKUPL_TYPE_ADR, data2, sizeof(data2));
+
+			DWIN_writeRegiser(&data, DW_PARAM_TERMOKUPL_TYPE_ADR, sizeof(data));
+
+		break;
+
+		case DW_PARAM_LOGO_ADR:
+
+			registerTable[DW_PARAM_LOGO_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_LOGO_ADR, data2, sizeof(data2));
+
+			DWIN_writeRegiser(&data, DW_PARAM_LOGO_CNT_ADR, sizeof(data));
+
+			DWIN_writeRegiser(&data, DW_PARAM_LOGO_ADR, sizeof(data));
+
+		break;
+
+		case DW_PARAM_DIL_ADR:
+
+			registerTable[DW_PARAM_DIL_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_DIL_ADR, data2, sizeof(data2));
+
+		break;
+
+		case DW_PARAM_BUHAR_ACTIVE_ADR:
+
+			registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_BUHAR_ACTIVE_ADR, data2, sizeof(data2));
+
+		break;
+
+		case DW_PARAM_CIHAZ_TYPE_ADR:
+
+			registerTable[DW_PARAM_CIHAZ_TYPE_ADR] = data;
+
+			parse16BitTo8Bit(data, &data2[0], &data2[1]);
+
+			EEPROM_Write(&hi2c1, DW_PARAM_CIHAZ_TYPE_ADR, data2, sizeof(data2));
+
+		break;
+
+		case DW_PARAMETRE_EXIT_PAGE_ADR:
+
+			uint8_t pageChangeCheck = 0;
+
+			uint8_t readData[2];
+			DWIN_readRegister(readData, DW_PARAM_DIL_ADR, sizeof(readData));
+
+			if(readData[1] != registerTable[DW_PARAM_DIL_ADR])
+			{
+
+				DWIN_changePage(DW_EMPTY_PAGE_NUM);
+
+				uint16_t writeData = registerTable[DW_PARAM_DIL_ADR];
+				DWIN_writeRegiser(&writeData, DW_PARAM_DIL_ADR, sizeof(data));
+
+				writeData = 1;
+				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
+
+				DWIN_dilChange();
+
+				EEPROM_Recete_DefaultWrite(&hi2c1);
+				EEPROM_Recete_Read(&hi2c1);
+
+				writeData = 0;
+				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
+
+				DWIN_changePage(0);
+
+			}
+
+			DWIN_readRegister(readData, DW_PARAM_BUHAR_ACTIVE_ADR, sizeof(readData));
+
+			if(readData[1] != registerTable[DW_PARAM_BUHAR_ACTIVE_ADR])
+			{
+				pageChangeCheck++;
+
+				DWIN_changePage(DW_EMPTY_PAGE_NUM);
+
+				uint16_t writeData = registerTable[DW_PARAM_BUHAR_ACTIVE_ADR];
+				DWIN_writeRegiser(&writeData, DW_PARAM_BUHAR_ACTIVE_ADR, sizeof(data));
+
+				writeData = 1;
+				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
+
+				DWIN_change_buhar_settings(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR]);
+
+				writeData = 0;
+				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
+
+				DWIN_changePage(0);
+			}
+
+			DWIN_readRegister(readData, DW_PARAM_CIHAZ_TYPE_ADR, sizeof(readData));
+
+			if(readData[1] != registerTable[DW_PARAM_CIHAZ_TYPE_ADR])
+			{
+				pageChangeCheck++;
+
+				DWIN_changePage(DW_EMPTY_PAGE_NUM);
+
+				uint16_t writeData = registerTable[DW_PARAM_CIHAZ_TYPE_ADR];
+				DWIN_writeRegiser(&writeData, DW_PARAM_CIHAZ_TYPE_ADR, sizeof(data));
+
+				writeData = 1;
+				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
+
+				DWIN_change_cihaz_type_settings(registerTable[DW_PARAM_CIHAZ_TYPE_ADR]);
+
+				writeData = 0;
+				DWIN_writeRegiser(&writeData, DW_LOADING_PAGE_ADR, sizeof(writeData));
+
+				DWIN_changePage(0);
+			}
+
+			if(pageChangeCheck>0)
+			{
+				if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						returnkeycode_change_structure(DW_PAGE_MANUEL_BUHARYOK_TEKTC_ADR);			// Manuel - tek tc buhar yok
+
+					else
+						returnkeycode_change_structure(DW_PAGE_MANUEL_BUHARVAR_TEKTC_ADR);			// Manuel - tek tc buhar var
+				}
+				else
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						returnkeycode_change_structure(DW_PAGE_MANUEL_BUHARYOK_CIFTTC_ADR);			// Manuel - cift tc buhar yok
+
+					else
+						returnkeycode_change_structure(DW_PAGE_MANUEL_BUHARVAR_CIFTTC_ADR);			// Manuel - cift tc buhar var
+				}
+			}
+
+
+		break;
+
+		case DW_FARBRIKA_AYAR_PARAM_ADR:
+
+			if(data == 1)
+			{
+				uint8_t eraseWrite = 0;
+				EEPROM_Write(&hi2c1, EEPROM_USAGE_CHECK_ADDR, &eraseWrite, 1);
+				HAL_Delay(0);
+
+				DWIN_writeRegiser((uint16_t[]){0x55aa,0x5aa5},0x0004,4);
+
+				HAL_Delay(1000);
+
+				NVIC_SystemReset();
+			}
+
+		break;
+
+		case (DW_FIRST_WRITE_RTC_ADR + 5):
+
+			uint8_t saniye 	= (uint8_t)registerTable[DW_FIRST_WRITE_RTC_ADR],
+					dakika 	= (uint8_t)registerTable[DW_FIRST_WRITE_RTC_ADR + 1],
+					saat	= (uint8_t)registerTable[DW_FIRST_WRITE_RTC_ADR + 2],
+					gun		= (uint8_t)registerTable[DW_FIRST_WRITE_RTC_ADR + 3],
+					ay		= (uint8_t)registerTable[DW_FIRST_WRITE_RTC_ADR + 4],
+					yil		= (uint8_t)data;
+
+			registerTable[DW_FIRST_WRITE_RTC_ADR + 5] = data;
+
+			DWIN_writeRTC(saniye, dakika, saat, gun, ay, yil, 1);
+			RTC_SetDateTime(saat, dakika, saniye, gun, ay, yil);
+
+		break;
+
+
+		case DW_ARIZA_ALARM_SUSTURMA_ADR:
+
+			pisirmeSonuAlarmFlag = 0;
+			pisirmeSonuAlarmBuzzer = 0;
+			setOut(BUZZER, 0);
+			setOut(K10, 0);
+
+		break;
+
+		case BLE_DVC_INFO_UPDATE_ADR:
+
+			registerTable[BLE_DVC_INFO_UPDATE_ADR] = data;
+			uint8_t qrCodeData[MAX_DVC_PSW_SIZE + MFD_DATA_SIZE] = {0};
+
+			for(int i=0;i<MFD_DATA_SIZE;i++)
+				qrCodeData[i] = (uint8_t)registerTable[BLE_DVC_MFD_ADR + i];
+
+			for(int i=0;i<MAX_DVC_PSW_SIZE;i++)
+				qrCodeData[i+MFD_DATA_SIZE] = (uint8_t)registerTable[BLE_DVC_PSW_ADR + i];
+
+
+			uint8_t strBuffer[(sizeof(qrCodeData) * 2) + 1] = {0};
+
+			hexToString(qrCodeData, sizeof(qrCodeData), strBuffer);
+
+			uint16_t qrCodeData_u16[(sizeof(strBuffer)/2) + 1] = {0};
+
+			convert_u8_to_u16(strBuffer, qrCodeData_u16, sizeof(strBuffer));
+
+			qrCodeData_u16[(sizeof(strBuffer)/2)] = 0xFF;
+
+			DWIN_writeRegiser(qrCodeData_u16, DW_QR_CODE_ADR,sizeof(qrCodeData_u16));
+
+
+		break;
+
+		case BLE_DVC_CONN_ADR:
+
+			registerTable[BLE_DVC_CONN_ADR] = data;
+
+			if(data == 0)
+				registerTable[BLE_DVC_LOCK_ADR] = data;
 
 		break;
 
@@ -933,6 +1399,12 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 			registerTable[addr] = data;
 		break;
 	}
+
+	if((addr >= APP_OTOMATIK_ACMA_SAAT_ADR) && (addr < (APP_OTOMATIK_ACMA_SAAT_ADR + ((EE_OTOMATIK_ACMA_PARAM_SIZE/2)*7))))
+		otomatikAcmaWriteCheck++;
+	else if((addr >= APP_RECETE_ILK_ADR) && (addr < (APP_RECETE_ILK_ADR + (APP_RECETE_LENGTH*100))))
+		receteDuzenlemeAdr = addr;
+
 }
 
 void Bluetooth_run(void)

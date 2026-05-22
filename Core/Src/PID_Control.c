@@ -138,6 +138,26 @@ void PID_Setup(void)
 
 }
 
+uint8_t dutyCycle_Calc_UstArka(uint16_t setTemp)
+{
+    int32_t duty = 60 + ((int32_t)setTemp - 250) * 20 / 50;
+
+    // üst sınır 100 (if yok)
+    duty = (duty > 100) * 100 + (duty <= 100) * duty;
+
+    return (uint8_t)duty;
+}
+
+uint8_t dutyCycle_Calc_Alt(uint16_t setTemp)
+{
+    int32_t duty = 50 + ((int32_t)setTemp - 250) * 25 / 70;
+
+    // sadece üst sınır clamp (if yok)
+    duty = (duty > 100) * 100 + (duty <= 100) * duty;
+
+    return (uint8_t)duty;
+}
+
 void PID_Run()
 {
 	uint16_t dutyCycle_ustArka 	= 0;
@@ -164,12 +184,7 @@ void PID_Run()
 			PIDOut_UstArka = 0;
 			TPID_UstArka.OutputSum = 0;
 
-			dutyCycle_ustArka = 40;
-
-			if(TempSetpoint_UstArka > 250)
-				dutyCycle_ustArka = 60;
-			if(TempSetpoint_UstArka > 300)
-				dutyCycle_ustArka = 80;
+			dutyCycle_ustArka = dutyCycle_Calc_UstArka(TempSetpoint_UstArka);
 
 			SEGGER_RTT_printf(0,"Ust Arka B\r\n");
 		}
@@ -177,6 +192,8 @@ void PID_Run()
 		{
 			TPID_UstArka.Ki = 0.02;
 
+			if(TempSetpoint_UstArka >= 300)
+				TPID_UstArka.Ki = 0.2;
 
 			PID_Compute(&TPID_UstArka,HAL_GetTick());
 			dutyCycle_ustArka = PIDOut_UstArka;
@@ -206,7 +223,8 @@ void PID_Run()
 		}
 		else if(ustArkaSicaklik < (TempSetpoint_UstArka ))
 		{
-			TPID_UstArka.Ki = 0.02;
+			if(TempSetpoint_UstArka >= 300)
+				TPID_UstArka.Ki = 0.2;
 
 			PID_Compute(&TPID_UstArka,HAL_GetTick());
 			dutyCycle_ustArka = PIDOut_UstArka;
@@ -238,18 +256,15 @@ void PID_Run()
 
 		if((TempSetpoint_Alt - (alt_Turbo_Calc/4)) >= altSicaklik)
 		{
-			dutyCycle_Alt = 35;
-
-			if(TempSetpoint_Alt > 250)
-				dutyCycle_Alt = 50;
-			if(TempSetpoint_Alt > 320)
-				dutyCycle_Alt = 75;
-
+			dutyCycle_Alt = dutyCycle_Calc_Alt(TempSetpoint_Alt);
 
 			SEGGER_RTT_printf(0,"Alt B\r\n");
 		}
 		else
 		{
+			if(TempSetpoint_Alt >= 300 )
+				TPID_Alt.Ki = 0.3;
+
 			PID_Compute(&TPID_Alt,HAL_GetTick());
 			dutyCycle_Alt = PIDOut_Alt;
 			SEGGER_RTT_printf(0,"Alt C\r\n");
@@ -271,6 +286,10 @@ void PID_Run()
 		else if(altSicaklik < TempSetpoint_Alt)
 		{
 			TPID_Alt.Ki = 0.1;
+
+			if(TempSetpoint_Alt >= 300 )
+				TPID_Alt.Ki = 0.3;
+
 			SEGGER_RTT_printf(0,"Alt E\r\n");
 			PID_Compute(&TPID_Alt,HAL_GetTick());
 			dutyCycle_Alt = PIDOut_Alt;
