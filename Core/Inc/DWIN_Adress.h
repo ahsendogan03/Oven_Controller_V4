@@ -179,6 +179,7 @@
 #define DW_BLE_NAME_START_ADR			0x17C4
 #define DW_BLE_PSW_START_ADR			0x17DE
 #define DW_QR_CODE_ADR					0x75BB
+#define DW_BLE_IKON_ADR					0x177B
 
 /*---------------------------- DIL ------------------------------*/
 

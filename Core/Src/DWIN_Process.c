@@ -2936,7 +2936,7 @@ void DWIN_receteSayfa(void)
 				islemdekiReceteAdim = 1;
 
 				registerTable[REG_DW_MODE_INFO_ADR] = DW_RECETE_PISIRME_SAYFA_ENTER;
-				//registerTable[APP_RECETE_PISIRME_]
+				registerTable[APP_RECETE_PISIRME_START_ADR] = recete_num;
 
 				for(int i=0;i<((EE_RECETE_DATA_SIZE/2)-2)/4;i++)
 				{
@@ -3793,6 +3793,7 @@ void DWIN_resetManuelPisirme(void)
 	registerTable[DW_ARIZA_ALARM_SUSTURMA_ADR]	= 0;
 
 	registerTable[REG_DW_MODE_INFO_ADR] = DW_ANA_SAYFA_ENTER;
+	registerTable[APP_RECETE_PISIRME_START_ADR] = 0;
 
 	pisirmeSonuAlarmFlag = 0;
 	pisirmeSonuAlarmBuzzer = 0;

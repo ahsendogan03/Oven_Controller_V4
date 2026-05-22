@@ -424,6 +424,12 @@ void Bluetooth_Check(void)
 	    if(stm32RequestReadyCheck == 1)
 	    {
 	    	stm32RequestReadyCheckCounter = 0;
+	    	stm32RequestReadyCheck = 0;
+	    	stm32RequestFlag = 0;
+
+	    	for(int i=0;i<stm32RequestLength;i++)
+	    		stm32RequestData[i] = 0;
+
 	    }
 
 		ESP32.rxDoneFlag = 0;
@@ -1387,6 +1393,9 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 		break;
 
 		case BLE_DVC_CONN_ADR:
+
+
+			DWIN_writeRegiser(&data, DW_BLE_IKON_ADR,sizeof(data));
 
 			registerTable[BLE_DVC_CONN_ADR] = data;
 
