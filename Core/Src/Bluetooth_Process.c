@@ -44,6 +44,7 @@ extern uint8_t ustArkaTurbo 	;
 extern uint8_t altTurbo			;
 
 extern uint16_t islemdekiReceteAdim;
+extern uint16_t islemdekiRecete;
 
 uint16_t ESP32_writeData[100];
 uint16_t ESP32_writeAmountAddress = 0;
@@ -1328,8 +1329,23 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 
 			if((data>0)&&(data <= DW_RECETE_AMOUNT))
 			{
-				uint8_t recete_num = data;
+
+				uint16_t recete_num = data;
+				islemdekiRecete = DW_RECETE_ILK_ADR + (recete_num - 1);
 				uint16_t receteAdimSayisi 	= 	registerTable[APP_RECETE_ILK_ADR + ((recete_num - 1)*APP_RECETE_LENGTH) + (APP_RECETE_LENGTH - 1)];
+				uint16_t receteResmi		= 	registerTable[APP_RECETE_ILK_ADR + ((recete_num - 1)*APP_RECETE_LENGTH) + (APP_RECETE_LENGTH - 2)];
+
+				DWIN_writeRegiser(&recete_num, DW_RECETE_DUZ_NUM_ADR, sizeof(recete_num));
+				DWIN_writeRegiser(&receteResmi, DW_RECETE_DUZ_RESIM_ADR, sizeof(receteResmi));
+
+				uint16_t receteAdi[DW_RECETE_ISIM_SIZE/2];
+
+				for(int i=0;i<DW_RECETE_ISIM_SIZE/2;i++)
+					receteAdi[i] = registerTable[APP_RECETE_ILK_ADR + ((recete_num - 1)*APP_RECETE_LENGTH) + (((EE_RECETE_DATA_SIZE/2)) - 2) + i];
+
+				DWIN_writeRegiser(receteAdi, DW_RECETE_DUZ_ISIM_ADR, sizeof(receteAdi));
+				DWIN_writeRegiser(&receteAdimSayisi, DW_RECETE_DUZ_ADIM_SAY_ADR, sizeof(receteAdimSayisi));
+
 
 				registerTable[APP_RECETE_PISIRME_START_ADR] = recete_num;
 				registerTable[REG_DW_MODE_INFO_ADR] = DW_RECETE_PISIRME_SAYFA_ENTER;
