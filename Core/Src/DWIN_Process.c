@@ -504,9 +504,9 @@ void DWIN_changeIcon(uint16_t dil)
 
 			dwin_icon_change_structure( 0x4840, 0x0004, 0x0008, 0x3700);
 
-			dwin_icon_change_structure( 0x484A, 0x0004, 0x0009, 0x3700);
+			dwin_icon_change_structure( 0x484A, 0x0004, 0x0025, 0x3700);
 
-			dwin_icon_change_structure( 0x4854, 0x0004, 0x0025, 0x3700);
+			dwin_icon_change_structure( 0x4854, 0x0004, 0x0009, 0x3700);
 
 			dwin_icon_change_structure( 0x485E, 0x000a, 0x000a, 0x3700);
 
@@ -1591,7 +1591,7 @@ void DWIN_run(void)
 			registerTable[DW_UST_SICAKLIK_ADR] 	= temp.TC3;
 			registerTable[DW_ALT_SICAKLIK_ADR] 	= temp.TC2;
 
-			uint16_t sendData[3] = {(uint16_t)temp.TMP,temp.TC3,temp.TC2};
+			uint16_t sendData[3] = {((uint16_t)temp.TMP),temp.TC3,temp.TC2};
 			DWIN_writeRegiser(sendData, DW_TMP112_ADR,sizeof(sendData));
 
 			if((registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)||(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER))
@@ -1665,6 +1665,8 @@ void DWIN_check(void)
 				SEGGER_RTT_printf(0,"DWIN OK ! Version : %x%x\r\n",version[0],version[1]);
 
 				registerTable[DWIN_VERSION_ADDR] = combineBytes(version[0], version[1]);
+
+				registerTable[APP_FIRIN_MODEL_ADR] = DW_EKRAN_PROG_MASTER_VAL;
 
 				uint8_t dw_ekran_prg_check[2] = {0};
 
@@ -1845,6 +1847,10 @@ void DWIN_manuelPisirmeSuresi(void)
 				registerTable[DW_PISIRME_BASLATMA_ADR] = 0;
 				registerTable[DW_SURE_SONU_ALARM_ANIM_ADR] = 1;
 
+				uint16_t data2 = 1;
+
+				STM32_RequestBufferWrite(&data2, DW_SURE_SONU_ALARM_ANIM_ADR, sizeof(data2));
+
 				if(registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)
 				{
 					if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
@@ -1984,8 +1990,6 @@ void DWIN_answerProcess(void)
 		{
 			DWIN_anaSayfa();
 
-			DWIN_receteSayfa();
-
 			if((registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)||(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER))
 				DWIN_manuelSayfa();
 
@@ -1993,9 +1997,10 @@ void DWIN_answerProcess(void)
 				DWIN_otomatikSayfa();
 
 			else if(registerTable[REG_DW_MODE_INFO_ADR] == DW_CIHAZ_TEST_SAYFA_ENTER)
-			{
 				DWIN_testSayfa();
-			}
+
+			else
+				DWIN_receteSayfa();
 
 		}
 
@@ -2267,7 +2272,7 @@ void DWIN_anaSayfa(void)
 
 		case DW_PARAMETRE_PAGE_ADR:
 
-			if(data == registerTable[DW_PARAM_PSW_ADR])
+			if((data == registerTable[DW_PARAM_PSW_ADR])||(data == DW_PARAMETRE_MK_PSW))
 			{
 				DWIN_changePage(DW_AYARLAR_PAGE_ADR);
 			}

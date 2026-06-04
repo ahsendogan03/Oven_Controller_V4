@@ -144,10 +144,12 @@
 /*---------------------------- PARAMETRELER SAYFASI	 ------------------------------*/
 
 #define DW_FW_VERSION_ADR				0x17E0
+#define APP_FIRIN_MODEL_ADR				0x2320
 
 #define DW_PARAMETRE_PAGE_ADR			0x17A8
 #define DW_PARAMETRE_EXIT_PAGE_ADR		0x17FA
 #define DW_PARAMETRE_DEFAULT_PSW		7251
+#define DW_PARAMETRE_MK_PSW				9128
 
 #define DW_PARAM_LAMBA_SURESI_ADR		0x17AA
 #define DW_PARAM_BUTTON_SOUND_ADR		0x17AC
