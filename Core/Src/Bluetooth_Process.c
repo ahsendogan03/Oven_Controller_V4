@@ -808,7 +808,24 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 				registerTable[REG_DW_MODE_INFO_ADR] = DW_MANUEL_MODE_ENTER;
 
 				PID_Setup();
-				DWIN_changePage(2);
+
+				if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 0)
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						DWIN_changePage(DW_PAGE_MANUEL_BUHARYOK_TEKTC_ADR);			// Manuel - tek tc buhar yok
+
+					else
+						DWIN_changePage(DW_PAGE_MANUEL_BUHARVAR_TEKTC_ADR);			// Manuel - tek tc buhar var
+				}
+				else
+				{
+					if(registerTable[DW_PARAM_BUHAR_ACTIVE_ADR] == 0)
+						DWIN_changePage(DW_PAGE_MANUEL_BUHARYOK_CIFTTC_ADR);			// Manuel - cift tc buhar yok
+
+					else
+						DWIN_changePage(DW_PAGE_MANUEL_BUHARVAR_CIFTTC_ADR);			// Manuel - cift tc buhar var
+				}
+
 				setOut(K14, data);
 			}
 

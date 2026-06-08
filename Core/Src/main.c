@@ -82,16 +82,9 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-extern uint16_t registerTable[9000];
+extern uint16_t registerTable[REGISTER_TABLE_SIZE];
 
-void delay_funct(uint16_t dly)
-{
-	for(int i=0;i<dly;i++)
-	{
-		shiftRefresh();
-		HAL_Delay(0);
-	}
-}
+
 
 uint32_t BytesToUint32(const uint8_t *buf)
 {
