@@ -462,6 +462,8 @@ void EEPROM_OtomatikAcma_Read(I2C_HandleTypeDef *hi2c)
 	uint16_t defaultOtomatik_param_u16[EE_OTOMATIK_ACMA_PARAM_SIZE/2]	= {0};
 	uint16_t defaultOtomatik_isim_u16[DW_RECETE_ISIM_SIZE/2]			= {0};
 
+	uint8_t saatIkonCheck = 0;
+
 	for(int i=0;i<7;i++)
 	{
 		for(int j=0;j<EE_OTOMATIK_ACMA_PARAM_SIZE;j++)
@@ -474,7 +476,7 @@ void EEPROM_OtomatikAcma_Read(I2C_HandleTypeDef *hi2c)
 
 		uint16_t otomatik_recete_row = defaultOtomatik_param_u16[7];
 
-		EEPROM_Read_Safe(hi2c, EE_RECETE_ILK_ADR + EE_RECETE_ISIM_ROW +((otomatik_recete_row)*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), defaultOtomatik_isim, sizeof(defaultOtomatik_isim));
+		EEPROM_Read_Safe(hi2c, EE_RECETE_ILK_ADR + EE_RECETE_ISIM_ROW +((otomatik_recete_row - 1)*(EE_RECETE_DATA_SIZE + DW_RECETE_ISIM_SIZE)), defaultOtomatik_isim, sizeof(defaultOtomatik_isim));
 
 		convert_u8_to_u16(defaultOtomatik_isim, defaultOtomatik_isim_u16, sizeof(defaultOtomatik_isim));
 
@@ -502,26 +504,43 @@ void EEPROM_OtomatikAcma_Read(I2C_HandleTypeDef *hi2c)
 
 		automaticOpeningVisualController(i+1, defaultOtomatik_param_u16[(EE_OTOMATIK_ACMA_PARAM_SIZE/2)-3], registerTable[DW_PARAM_CIHAZ_TYPE_ADR]);
 
+
+
 		if(defaultOtomatik_param_u16[(EE_OTOMATIK_ACMA_PARAM_SIZE/2)-2] == 0)
 		{
 			uint16_t oto_write = 0x003D;
 			DWIN_writeRegiser(&oto_write, 0x1597 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
 			registerTable[0x1597 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH)] = 0;
+
+//			uint16_t ikonWrite = 0;
+//			DWIN_writeRegiser(&ikonWrite, DW_SAAT_IKON_ADDR, sizeof(ikonWrite));
+//			registerTable[DW_SAAT_IKON_ADDR] = 0;
 		}
 		else
 		{
-			if(registerTable[DW_SAAT_IKON_ADDR] != 1)
-			{
-				uint16_t ikonWrite = 1;
-				DWIN_writeRegiser(&ikonWrite, DW_SAAT_IKON_ADDR, sizeof(ikonWrite));
-				registerTable[DW_SAAT_IKON_ADDR] = 1;
-			}
+//			if(registerTable[DW_SAAT_IKON_ADDR] != 1)
+//			{
+//				uint16_t ikonWrite = 1;
+//				DWIN_writeRegiser(&ikonWrite, DW_SAAT_IKON_ADDR, sizeof(ikonWrite));
+//				registerTable[DW_SAAT_IKON_ADDR] = 1;
+//			}
+
+			saatIkonCheck = 1;
+
 			uint16_t oto_write = 0x003E;
 			DWIN_writeRegiser(&oto_write, 0x1597 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH), sizeof(oto_write));
 			registerTable[0x1597 + (i*DW_OTOMATIK_ACMA_ADR_LENGTH)] = 1;
 		}
 
+	}
 
+	SEGGER_RTT_printf(0,"saatIkonCheck :%d \r\nregisterTable[DW_SAAT_IKON_ADDR] :%d \r\n",saatIkonCheck,registerTable[DW_SAAT_IKON_ADDR]);
+
+	if(saatIkonCheck != registerTable[DW_SAAT_IKON_ADDR])
+	{
+		uint16_t ikonWrite = saatIkonCheck;
+		DWIN_writeRegiser(&ikonWrite, DW_SAAT_IKON_ADDR, sizeof(ikonWrite));
+		registerTable[DW_SAAT_IKON_ADDR] = saatIkonCheck;
 	}
 
 }

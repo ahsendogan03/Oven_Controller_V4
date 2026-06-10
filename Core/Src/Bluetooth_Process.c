@@ -794,7 +794,6 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 
 		case DW_MANUEL_MOD_GIRIS_ADR:
 
-
 			if(data == 0)
 			{
 				registerTable[REG_DW_MODE_INFO_ADR] = DW_ANA_SAYFA_ENTER;
