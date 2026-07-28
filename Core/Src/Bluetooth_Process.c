@@ -839,7 +839,7 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 
 			if(data == 0)
 			{
-				setOut(K8, 0);
+				setOut(K8|K6, 0);
 
 				registerTable[DW_BUHAR_HAZIR_ANIM] = data;
 				DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
@@ -847,7 +847,7 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 
 			else if(data == 1)
 			{
-				setOut(K8, 1);
+				setOut(K8|K6, 1);
 
 				registerTable[DW_BUHAR_HAZIR_ANIM] = data;
 				DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
@@ -1464,15 +1464,6 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 
 		break;
 
-
-		case DW_ARIZA_ALARM_SUSTURMA_ADR:
-
-			pisirmeSonuAlarmFlag = 0;
-			pisirmeSonuAlarmBuzzer = 0;
-			setOut(BUZZER, 0);
-			setOut(K10, 0);
-
-		break;
 
 		case BLE_DVC_INFO_UPDATE_ADR:
 

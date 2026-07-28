@@ -2585,14 +2585,14 @@ void DWIN_manuelSayfa(void)
 
 			if(data == 0)
 			{
-				setOut(K8, 0);
+				setOut(K8|K6, 0);
 				registerTable[DW_BUHAR_HAZIR_ANIM] = data;
 				DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
 			}
 
 			else if(data == 1)
 			{
-				setOut(K8, 1);
+				setOut(K8|K6, 1);
 				registerTable[DW_BUHAR_HAZIR_ANIM] = data;
 				DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
 			}
@@ -3479,7 +3479,7 @@ void DWIN_otomatikPisirmeBaslatmaCheck(void)
 				if(otomatikPisirmeBuhar == 1)
 				{
 					uint16_t buharData = 1;
-					setOut(K8, 1);
+					setOut(K8|K6, 1);
 					registerTable[DW_BUHAR_HAZIR_ANIM] = buharData;
 					registerTable[DW_BUHAR_HAZIRLAMA_ADR] = buharData;
 
@@ -3495,7 +3495,7 @@ void DWIN_otomatikPisirmeBaslatmaCheck(void)
 				if(otomatikPisirmeBuhar == 1)
 				{
 					uint16_t buharData = 1;
-					setOut(K8, 1);
+					setOut(K8|K6, 1);
 					registerTable[DW_BUHAR_HAZIR_ANIM] = buharData;
 					registerTable[DW_BUHAR_HAZIRLAMA_ADR] = buharData;
 
@@ -3796,7 +3796,7 @@ void DWIN_resetManuelPisirme(void)
 	ustOnTurbo 		= 0;
 	alarmBuzzerPeriod = 1000;
 
-	setOut(K8|K9|BUZZER|K1|K2|K3|K4|K5|K6|K14|K10, 0);
+	setOut(K8|K6|K9|BUZZER|K1|K2|K3|K4|K5|K6|K14|K10, 0);
 
 
 	uint16_t data;
