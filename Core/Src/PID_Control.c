@@ -140,7 +140,7 @@ void PID_Setup(void)
 
 uint8_t dutyCycle_Calc_UstArka(uint16_t setTemp)
 {
-    int32_t duty = 60 + ((int32_t)setTemp - 250) * 20 / 50;
+	int32_t duty = 30 + ((int32_t)setTemp - 200) * 15 / 50;
 
     // üst sınır 100 (if yok)
     duty = (duty > 100) * 100 + (duty <= 100) * duty;
