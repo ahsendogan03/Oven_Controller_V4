@@ -4029,22 +4029,51 @@ void DWIN_arızaCheck(void)
 
 void DWIN_buharHazirCheck(void)
 {
-	if(HAL_GPIO_ReadPin(I_BUHAR_HAZIR) == 1)
-		counterTick.buharHazir = 0;
-
-	if((counterTick.buharHazir >= 100) && (registerTable[DW_BUHAR_HAZIRLAMA_ADR] == 1) && (registerTable[DW_BUHAR_HAZIR_ANIM] != 2))
+	if(registerTable[DW_PARAM_BUHAR_SENSOR_TYPE_ADR] == DW_BUHAR_SENSOR_TAT_VAL)
 	{
-		registerTable[DW_BUHAR_HAZIR_ANIM] = 2;
-		uint16_t data = 2;
-		DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
+		if(HAL_GPIO_ReadPin(I_BUHAR_HAZIR) == 1)
+			counterTick.buharHazir = 0;
+
+		if((counterTick.buharHazir >= 100) && (registerTable[DW_BUHAR_HAZIRLAMA_ADR] == 1) && (registerTable[DW_BUHAR_HAZIR_ANIM] != 2))
+		{
+			registerTable[DW_BUHAR_HAZIR_ANIM] = 2;
+			uint16_t data = 2;
+			DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
+
+			setOut(K8|K6, 0);
+		}
+
+		if((counterTick.buharHazir < 100) && (registerTable[DW_BUHAR_HAZIRLAMA_ADR] == 1) && (registerTable[DW_BUHAR_HAZIR_ANIM] == 2))
+		{
+			registerTable[DW_BUHAR_HAZIR_ANIM] = 1;
+			uint16_t data = 1;
+			DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
+
+			setOut(K8|K6, 1);
+		}
 	}
 
-	if((counterTick.buharHazir < 100) && (registerTable[DW_BUHAR_HAZIRLAMA_ADR] == 1) && (registerTable[DW_BUHAR_HAZIR_ANIM] == 2))
+	else if(registerTable[DW_PARAM_BUHAR_SENSOR_TYPE_ADR] == DW_BUHAR_SENSOR_KUPL_VAL)
 	{
-		registerTable[DW_BUHAR_HAZIR_ANIM] = 1;
-		uint16_t data = 1;
-		DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
+		if((temp.TC1 < registerTable[DW_PARAM_BUHAR_HAZIR_SICAK_ADR]) && (registerTable[DW_BUHAR_HAZIRLAMA_ADR] == 1) && (registerTable[DW_BUHAR_HAZIR_ANIM] == 2))
+		{
+			registerTable[DW_BUHAR_HAZIR_ANIM] = 1;
+			uint16_t data = 1;
+			DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
+
+			setOut(K8|K6, 1);
+		}
+
+		if((temp.TC1 >= registerTable[DW_PARAM_BUHAR_HAZIR_SICAK_ADR]) && (registerTable[DW_BUHAR_HAZIRLAMA_ADR] == 1) && (registerTable[DW_BUHAR_HAZIR_ANIM] != 2))
+		{
+			registerTable[DW_BUHAR_HAZIR_ANIM] = 2;
+			uint16_t data = 2;
+			DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
+
+			setOut(K8|K6, 0);
+		}
 	}
+
 
 }
 
