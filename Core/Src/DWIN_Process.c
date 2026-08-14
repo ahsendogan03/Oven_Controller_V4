@@ -2380,6 +2380,12 @@ void DWIN_anaSayfa(void)
 
 		case DW_PARAM_LAMBA_SURESI_ADR:
 
+			if(data >= 100)
+			{
+				data = data % 100;
+				DWIN_writeRegiser(&data, DW_PARAM_LAMBA_SURESI_ADR, sizeof(data));
+			}
+
 			registerTable[DW_PARAM_LAMBA_SURESI_ADR] = data;
 
 			parse16BitTo8Bit(data, &data2[0], &data2[1]);
