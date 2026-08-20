@@ -423,6 +423,9 @@ void DWIN_changePopup(uint16_t dil)
 		case DW_DIL_ALMANCA_VAL:
 			dwin_pop_up_change_all_structure(104);
 		break;
+		case DW_DIL_ESPANYOL_VAL:
+			dwin_pop_up_change_all_structure(108);
+		break;
 	}
 }
 
@@ -928,6 +931,125 @@ void DWIN_changeIcon(uint16_t dil)
 
 
 		break;
+
+
+		case DW_DIL_ESPANYOL_VAL:
+
+		    dwin_icon_change_structure( 0x4700, 0x003B, 0x003C, 0x4201);
+
+		    dwin_icon_change_structure( 0x470A, 0x0000, 0x0001, 0x3701);
+
+		    dwin_icon_change_structure( 0x4714, 0x0000, 0x0001, 0x3701);
+
+		    dwin_icon_change_structure( 0x471E, 0x003B, 0x003C, 0x4201);
+
+		    dwin_icon_change_structure( 0x4728, 0x0000, 0x0001, 0x3701);
+
+		    dwin_icon_change_structure( 0x4732, 0x0000, 0x0001, 0x3701);
+
+		    dwin_icon_change_structure( 0x473C, 0x004D, 0x004D, 0x4201);
+
+		    dwin_icon_change_structure( 0x4746, 0x0000, 0x0001, 0x3701);
+
+		    dwin_icon_change_structure( 0x4750, 0x0000, 0x0001, 0x3701);
+
+		    dwin_icon_change_structure( 0x475A, 0x004D, 0x004D, 0x4201);
+
+		    dwin_icon_change_structure( 0x4764, 0x0000, 0x0001, 0x3701);
+
+		    dwin_icon_change_structure( 0x476E, 0x004D, 0x004D, 0x4201);
+
+		    dwin_icon_change_structure( 0x4778, 0x003B, 0x003C, 0x4201);
+
+		    dwin_icon_change_structure( 0x4782, 0x0000, 0x0001, 0x3701);
+
+		    dwin_icon_change_structure( 0x478C, 0x004D, 0x004D, 0x4201);
+
+		    dwin_icon_change_structure( 0x47C8, 0x004B, 0x004C, 0x4200);
+
+		    dwin_icon_change_structure( 0x47D2, 0x004B, 0x004C, 0x4200);
+
+		    dwin_icon_change_structure( 0x47DC, 0x004B, 0x004C, 0x4200);
+
+		    dwin_icon_change_structure( 0x47E6, 0x0052, 0x0053, 0x4201);
+
+		    dwin_icon_change_structure( 0x47F0, 0x0051, 0x0050, 0x4201);
+
+		    dwin_icon_change_structure( 0x47FA, 0x004B, 0x004C, 0x4200);
+
+		    dwin_icon_change_structure( 0x4796, 0x0000, 0x0001, 0x3701);
+
+
+		    dwin_icon_change_structure( 0x47A0, 0x003B, 0x003C, 0x4201);
+
+		    dwin_icon_change_structure( 0x4822, 0x005B, 0x0054, 0x4201);
+
+		    dwin_icon_change_structure( 0x482C, 0x005B, 0x0055, 0x4201);
+
+		    dwin_icon_change_structure( 0x4836, 0x005B, 0x0056, 0x4201);
+
+		    dwin_icon_change_structure( 0x4840, 0x005B, 0x0057, 0x4201);
+
+		    dwin_icon_change_structure( 0x484A, 0x005B, 0x0058, 0x4201);
+
+		    dwin_icon_change_structure( 0x4854, 0x005B, 0x0059, 0x4201);
+
+		    dwin_icon_change_structure( 0x485E, 0x005A, 0x005A, 0x4201);
+
+
+		    if(registerTable[DW_PARAM_CIHAZ_TYPE_ADR] == 1)
+		    {
+		        dwin_icon_change_structure( 0x4868, 0x003F, 0x003F, 0x4201);
+
+		        dwin_icon_change_structure( 0x4872, 0x003F, 0x003F, 0x4201);
+
+		        dwin_icon_change_structure( 0x487C, 0x003F, 0x003F, 0x4201);
+
+		        dwin_icon_change_structure( 0x4886, 0x003F, 0x003F, 0x4201);
+
+		        dwin_icon_change_structure( 0x4890, 0x003F, 0x003F, 0x4201);
+
+		        dwin_icon_change_structure( 0x489A, 0x003F, 0x003F, 0x4201);
+
+		        dwin_icon_change_structure( 0x48A4, 0x003F, 0x003F, 0x4201);
+		    }
+		    else
+		    {
+		        dwin_icon_change_structure( 0x4868, 0x0040, 0x0040, 0x4201);
+
+		        dwin_icon_change_structure( 0x4872, 0x0040, 0x0040, 0x4201);
+
+		        dwin_icon_change_structure( 0x487C, 0x0040, 0x0040, 0x4201);
+
+		        dwin_icon_change_structure( 0x4886, 0x0040, 0x0040, 0x4201);
+
+		        dwin_icon_change_structure( 0x4890, 0x0040, 0x0040, 0x4201);
+
+		        dwin_icon_change_structure( 0x489A, 0x0040, 0x0040, 0x4201);
+
+		        dwin_icon_change_structure( 0x48A4, 0x0040, 0x0040, 0x4201);
+		    }
+
+
+		    dwin_icon_change_structure( 0x48AE, 0x004E, 0x004E, 0x4201);
+
+		    dwin_icon_change_structure( 0x5000, 0x0013, 0x0013, 0x4201);
+
+		    dwin_icon_change_structure( 0x4804, 0x0044, 0x004A, 0x4201);
+
+		    dwin_icon_change_structure( 0x480E, 0x004B, 0x004C, 0x4200);
+
+		    dwin_icon_change_structure( 0x4818, 0x004B, 0x004C, 0x4200);
+
+		    dwin_icon_change_structure( 0x500A, 0x0042, 0x0042, 0x4201);
+
+		    dwin_icon_change_structure( 0x5014, 0x0041, 0x0041, 0x4201);
+
+		    dwin_icon_change_structure( 0x501E, 0x004F, 0x004F, 0x4201);
+
+		    dwin_icon_change_structure( 0x5028, 0x0004, 0x0004, 0x4201);
+
+		    break;
 	}
 }
 
@@ -1029,10 +1151,9 @@ void DWIN_changeKeyboard(uint16_t dil)
 		HAL_Delay(100);
 		keyboard_change_structure(0x0026,0x03,0x0B,0x32,0x46,0x63);
 		HAL_Delay(100);
-		keyboard_change_structure(0x0062,0x00,0x0B,0x32,0x46,0x63);
-		HAL_Delay(100);
+
 	}
-	else if(dil != DW_DIL_ALMANCA_VAL)
+	else if((dil == DW_DIL_TURKCE_VAL)||(dil == DW_DIL_INGILIZCE_VAL))
 	{
 		keyboard_change_structure(0x001D,0x03,0x0f,0x23,0x46,0x27); //prescription edit
 		HAL_Delay(100);
@@ -1055,10 +1176,9 @@ void DWIN_changeKeyboard(uint16_t dil)
         keyboard_change_structure(0x0026,0x03,0x0f,0x23,0x46,0x27);
         HAL_Delay(100);
 
-        keyboard_change_structure(0x0062,0x00,0x0f,0x23,0x46,0x27); //bt name edit
-        HAL_Delay(100);
+
 	}
-	else // almanca
+	else if(dil == DW_DIL_ALMANCA_VAL)// almanca
 	{
 		keyboard_change_structure(0x001D,0x03,0x04,0x32,0x46,0x69);
 		HAL_Delay(100);
@@ -1080,7 +1200,29 @@ void DWIN_changeKeyboard(uint16_t dil)
 		HAL_Delay(100);
 		keyboard_change_structure(0x0026,0x03,0x04,0x32,0x46,0x69);
 		HAL_Delay(100);
-		keyboard_change_structure(0x0062,0x00,0x04,0x32,0x46,0x69);
+
+	}
+	else if(dil == DW_DIL_ESPANYOL_VAL)
+	{
+		keyboard_change_structure(0x001D,0x03,0x07,0x32,0x46,0x6D);
+		HAL_Delay(100);
+		keyboard_change_structure(0x001E,0x03,0x07,0x32,0x46,0x6D);
+		HAL_Delay(100);
+		keyboard_change_structure(0x001F,0x03,0x07,0x32,0x46,0x6D);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0020,0x03,0x07,0x32,0x46,0x6D);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0021,0x03,0x07,0x32,0x46,0x6D);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0022,0x03,0x07,0x32,0x46,0x6D);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0023,0x03,0x07,0x32,0x46,0x6D);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0024,0x03,0x07,0x32,0x46,0x6D);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0025,0x03,0x07,0x32,0x46,0x6D);
+		HAL_Delay(100);
+		keyboard_change_structure(0x0026,0x03,0x07,0x32,0x46,0x6D);
 		HAL_Delay(100);
 	}
 
@@ -1104,14 +1246,10 @@ void DWIN_changeWord(uint16_t dil)
 			DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x452E + 0x09,4);
 			DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x4548 + 0x09,4);
 
-			//DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x453B+0x09,4);  //bt name
-
 			for(int i=0; i<7; i++) //automatic opening names
 			{
 				DWIN_writeRegiser((uint16_t[]){0x0F0F,0x1428},0x1598+((i*0x3B)+0x09),4);
 			}
-
-			//DWIN_writeRegiser(noName_u16,0x17c0,sizeof(noName_u16)); //bt isim
 
 
 		break;
@@ -1129,14 +1267,12 @@ void DWIN_changeWord(uint16_t dil)
 			DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x452E + 0x09,4);
 			DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x4548 + 0x09,4);
 
-			//DWIN_writeRegiser((uint16_t[]){0x0F0F,0x2346},0x453B+0x09,4); //bt name
 
 			for(int i=0; i<7; i++) //automatic opening names
 			{
 				DWIN_writeRegiser((uint16_t[]){0x0F0F,0x1428},0x1598+((i*0x3B)+0x09),4);
 			}
 
-			//DWIN_writeRegiser(noName_u16,0x17c0,sizeof(noName_u16)); 	//bt isim
 
 
 		break;
@@ -1154,14 +1290,12 @@ void DWIN_changeWord(uint16_t dil)
 			DWIN_writeRegiser((uint16_t[]){0x0B0B,0x3246},0x452E + 0x09,4);
 			DWIN_writeRegiser((uint16_t[]){0x0B0B,0x3246},0x4548 + 0x09,4);
 
-			//DWIN_writeRegiser((uint16_t[]){0x0B0B,0x3246},0x453B+0x09,4); //bt name
 
 			for(int i=0; i<7; i++) //automatic opening names
 			{
 				DWIN_writeRegiser((uint16_t[]){0x0606,0x1E28},0x1598+((i*0x3B)+0x09),4);
 			}
 
-			//DWIN_writeRegiser(0x17c0,Без_Имени_u16,10); //bt isim
 
 		break;
 
@@ -1179,14 +1313,34 @@ void DWIN_changeWord(uint16_t dil)
 			DWIN_writeRegiser((uint16_t[]){0x0404,0x3246},0x452E + 0x09,4);
 			DWIN_writeRegiser((uint16_t[]){0x0404,0x3246},0x4548 + 0x09,4);
 
-			//DWIN_writeRegiser((uint16_t[]){0x0404,0x3246},0x453B+0x09,4); //bt name
 
 			for(int i=0; i<7; i++) //automatic opening names
 			{
 				DWIN_writeRegiser((uint16_t[]){0x0303,0x1E28},0x1598+((i*0x3B)+0x09),4);
 			}
 
-			//DWIN_writeRegiser(0x17c0,Без_Имени_u16,10); //bt isim
+
+		break;
+
+		case DW_DIL_ESPANYOL_VAL:
+
+
+			for(int i=0; i<100; i++) //dish names
+			{
+				DWIN_writeRegiser((uint16_t[]){0x0707,0x3246},0x4000+((i*0x0D)+0x09),4);
+			}
+
+			DWIN_writeRegiser((uint16_t[]){0x0707,0x3246},0x4514+0x09,4); //prescription edit name
+
+			DWIN_writeRegiser((uint16_t[]){0x0707,0x3246},0x4521 + 0x09,4); //cooking situation names
+			DWIN_writeRegiser((uint16_t[]){0x0707,0x3246},0x452E + 0x09,4);
+			DWIN_writeRegiser((uint16_t[]){0x0707,0x3246},0x4548 + 0x09,4);
+
+
+			for(int i=0; i<7; i++) //automatic opening names
+			{
+				DWIN_writeRegiser((uint16_t[]){0x0808,0x1E28},0x1598+((i*0x3B)+0x09),4);
+			}
 
 
 		break;
@@ -1217,9 +1371,9 @@ void DWIN_changeAnim(uint16_t dil)
 		case DW_DIL_INGILIZCE_VAL:
 			dwin_anim_change_structure(0x48B8,0x00C8,0x008b,0x008c,0x3a01);
 			dwin_anim_change_structure(0x48C5, 0x00C8, 0x008B, 0x008C, 0x3A01);
-			dwin_anim_change_structure( 0x48D2,0x00C8, 0x008D, 0x008E, 0x3A01);
-			dwin_anim_change_structure( 0x48DF,0x00C8, 0x008D, 0x008E, 0x3A01);
-			dwin_anim_change_structure( 0x48EC,0x00C8, 0x008D, 0x008E, 0x3A01);
+			dwin_anim_change_structure( 0x48D2,0x00C8, 0x008B, 0x008C, 0x3A01);
+			dwin_anim_change_structure( 0x48DF,0x00C8, 0x008B, 0x008C, 0x3A01);
+			dwin_anim_change_structure( 0x48EC,0x00C8, 0x008B, 0x008C, 0x3A01);
 			dwin_anim_change_structure(0x48F9, 0x00C8, 0x008B, 0x008C, 0x3A01);
 			dwin_anim_change_structure(0x4906, 0x00C8, 0x008B, 0x008C, 0x3A01);
 			dwin_anim_change_structure(0x4913, 0x00C8, 0x008B, 0x008C, 0x3A01);
@@ -1228,8 +1382,8 @@ void DWIN_changeAnim(uint16_t dil)
 			dwin_anim_change_structure(0x48B8,0x00C8,0x008D,0x008E,0x3a01);
 			dwin_anim_change_structure( 0x48C5,0x00C8, 0x008D, 0x008E, 0x3A01);
 			dwin_anim_change_structure( 0x48D2,0x00C8, 0x008D, 0x008E, 0x3A01);
-			dwin_anim_change_structure( 0x48DF,0x00C8, 0x0002, 0x0003, 0x3701);
-			dwin_anim_change_structure( 0x48DF,0x00C8, 0x0002, 0x0003, 0x3701);
+			dwin_anim_change_structure( 0x48DF,0x00C8, 0x008D, 0x008E, 0x3A01);
+			dwin_anim_change_structure( 0x48DF,0x00C8, 0x008D, 0x008E, 0x3A01);
 			dwin_anim_change_structure( 0x48F9,0x00C8, 0x008D, 0x008E, 0x3A01);
 			dwin_anim_change_structure( 0x4906,0x00C8, 0x008D, 0x008E, 0x3A01);
 			dwin_anim_change_structure( 0x4913,0x00C8, 0x008D, 0x008E, 0x3A01);
@@ -1243,6 +1397,16 @@ void DWIN_changeAnim(uint16_t dil)
 			dwin_anim_change_structure(0x48F9,0x00C8,0x0044,0x0045,0x3E01);
 			dwin_anim_change_structure(0x4906,0x00C8,0x0044,0x0045,0x3E01);
 			dwin_anim_change_structure(0x4913,0x00C8,0x0044,0x0045,0x3E01);
+		break;
+		case DW_DIL_ESPANYOL_VAL:
+			dwin_anim_change_structure(0x48B8,0x00D8,0x003D,0x003E,0x4201);
+			dwin_anim_change_structure(0x48C5,0x00D8,0x003D,0x003E,0x4201);
+			dwin_anim_change_structure(0x48D2,0x00D8,0x003D,0x003E,0x4201);
+			dwin_anim_change_structure(0x48DF,0x00D8,0x003D,0x003E,0x4201);
+			dwin_anim_change_structure(0x48EC,0x00D8,0x003D,0x003E,0x4201);
+			dwin_anim_change_structure(0x48F9,0x00D8,0x003D,0x003E,0x4201);
+			dwin_anim_change_structure(0x4906,0x00D8,0x003D,0x003E,0x4201);
+			dwin_anim_change_structure(0x4913,0x00D8,0x003D,0x003E,0x4201);
 		break;
 	}
 }
@@ -1287,23 +1451,72 @@ void DWIN_tcVisualController(uint8_t mode)
 	}
 }
 
+void DWIN_changeSabitYazi(uint16_t dil)
+{
+	uint16_t writeData = 0;
+
+	switch(dil)
+	{
+		case DW_DIL_TURKCE_VAL:
+
+			writeData = registerTable[DW_PARAM_DIL_ADR];
+			DWIN_writeRegiser(&writeData, 0x843A, sizeof(writeData));
+
+			writeData = 0;
+			DWIN_writeRegiser(&writeData, 0x843B, sizeof(writeData));
+			DWIN_writeRegiser(&writeData, 0x843C, sizeof(writeData));
+
+		break;
+		case DW_DIL_INGILIZCE_VAL:
+
+			writeData = registerTable[DW_PARAM_DIL_ADR];
+			DWIN_writeRegiser(&writeData, 0x843A, sizeof(writeData));
+
+			writeData = 0;
+			DWIN_writeRegiser(&writeData, 0x843B, sizeof(writeData));
+			DWIN_writeRegiser(&writeData, 0x843C, sizeof(writeData));
+
+		break;
+
+		case DW_DIL_RUSCA_VAL:
+
+			writeData = registerTable[DW_PARAM_DIL_ADR];
+			DWIN_writeRegiser(&writeData, 0x843A, sizeof(writeData));
+
+			writeData = 0;
+			DWIN_writeRegiser(&writeData, 0x843B, sizeof(writeData));
+			DWIN_writeRegiser(&writeData, 0x843C, sizeof(writeData));
+
+		break;
+		case DW_DIL_ALMANCA_VAL:
+
+			writeData = 1;
+			DWIN_writeRegiser(&writeData, 0x843B, sizeof(writeData));
+
+			writeData = 0;
+			DWIN_writeRegiser(&writeData, 0x843A, sizeof(writeData));
+			DWIN_writeRegiser(&writeData, 0x843C, sizeof(writeData));
+
+		break;
+		case DW_DIL_ESPANYOL_VAL:
+
+			writeData = 1;
+			DWIN_writeRegiser(&writeData, 0x843C, sizeof(writeData));
+
+			writeData = 0;
+			DWIN_writeRegiser(&writeData, 0x843A, sizeof(writeData));
+			DWIN_writeRegiser(&writeData, 0x843B, sizeof(writeData));
+
+		break;
+
+	}
+}
 
 
 void DWIN_dilChange(void)
 {
-	uint16_t writeData = registerTable[DW_PARAM_DIL_ADR];
-	DWIN_writeRegiser(&writeData, DW_DIL_SABIT_YAZI_ADR, sizeof(writeData));
 
-	if(registerTable[DW_PARAM_DIL_ADR] == DW_DIL_ALMANCA_VAL)
-	{
-		writeData = 1;
-		DWIN_writeRegiser(&writeData, 0x843B, sizeof(writeData));
-	}
-	else
-	{
-		writeData = 0;
-		DWIN_writeRegiser(&writeData, 0x843B, sizeof(writeData));
-	}
+	DWIN_changeSabitYazi(registerTable[DW_PARAM_DIL_ADR]);
 
 	DWIN_changePopup(registerTable[DW_PARAM_DIL_ADR]);
 
@@ -2167,7 +2380,16 @@ void DWIN_change_cihaz_type_settings(uint16_t setVal)
 					dwin_icon_change_structure( 0x4868+(i*0x0a), 0x0043, 0x0043, 0x3E01);
 				}
 
-				break;
+			break;
+
+			case 0x004:
+
+				for(int i=0; i<7; i++)
+				{
+					dwin_icon_change_structure( 0x4868+(i*0x0a), 0x0040, 0x0040, 0x4201);
+				}
+
+			break;
 		}
 	}
 	else
@@ -2182,7 +2404,7 @@ void DWIN_change_cihaz_type_settings(uint16_t setVal)
 					dwin_icon_change_structure( 0x4868+(i*0x0a), 0x0016, 0x0016, 0x3700);
 				}
 
-				break;
+			break;
 			case 0x001:
 
 				for(int i=0; i<7; i++)
@@ -2190,7 +2412,7 @@ void DWIN_change_cihaz_type_settings(uint16_t setVal)
 					dwin_icon_change_structure(0x4868+(i*0x0a), 0x0089, 0x0089, 0x3A00);
 				}
 
-				break;
+			break;
 			case 0x002:
 
 				for(int i=0; i<7; i++)
@@ -2198,7 +2420,7 @@ void DWIN_change_cihaz_type_settings(uint16_t setVal)
 					dwin_icon_change_structure( 0x4868+(i*0x0a), 0x008a, 0x008a, 0x3A00);
 				}
 
-				break;
+			break;
 			case 0x003:
 
 				for(int i=0; i<7; i++)
@@ -2206,7 +2428,16 @@ void DWIN_change_cihaz_type_settings(uint16_t setVal)
 					dwin_icon_change_structure( 0x4868+(i*0x0a), 0x004B, 0x004B, 0x3E01);
 				}
 
-				break;
+			break;
+
+			case 0x004:
+
+				for(int i=0; i<7; i++)
+				{
+					dwin_icon_change_structure( 0x4868+(i*0x0a), 0x003F, 0x003F, 0x4201);
+				}
+
+			break;
 		}
 	}
 }

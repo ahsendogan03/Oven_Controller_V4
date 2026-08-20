@@ -191,6 +191,7 @@
 #define DW_DIL_INGILIZCE_VAL 			1
 #define DW_DIL_RUSCA_VAL 				2
 #define DW_DIL_ALMANCA_VAL 				3
+#define DW_DIL_ESPANYOL_VAL 			4
 
 /*---------------------------- ARIZA ALARM SAYFASI	 ------------------------------*/
 

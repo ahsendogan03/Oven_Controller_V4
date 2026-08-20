@@ -335,19 +335,25 @@ EEPROM_initResponse EEPROM_Recete_DefaultWrite(I2C_HandleTypeDef *hi2c)
 
 	if(registerTable[DW_PARAM_DIL_ADR] == DW_DIL_RUSCA_VAL)
 	{
-		uint8_t isim[DW_RECETE_ISIM_SIZE] 		= {0x42,0x46,0x48,0x20,0x49,0x4D,0x46,0x4E,0x49,0};
+		uint8_t isim[DW_RECETE_ISIM_SIZE] 		= {0x42,0x46,0x48,0x20,0x49,0x4D,0x46,0x4E,0,0};
 		for(int i=0;i<DW_RECETE_ISIM_SIZE;i++)
 			defaultRecete_isim[i] = isim[i];
 	}
-	else if(registerTable[DW_PARAM_DIL_ADR] != DW_DIL_ALMANCA_VAL)
+	else if((registerTable[DW_PARAM_DIL_ADR] == DW_DIL_TURKCE_VAL)||(registerTable[DW_PARAM_DIL_ADR] == DW_DIL_INGILIZCE_VAL))
 	{
 		uint8_t isim[DW_RECETE_ISIM_SIZE] 		= {'N','o',' ','N','a','m','e',0,0,0};
 		for(int i=0;i<DW_RECETE_ISIM_SIZE;i++)
 			defaultRecete_isim[i] = isim[i];
 	}
-	else
+	else if(registerTable[DW_PARAM_DIL_ADR] == DW_DIL_ALMANCA_VAL)
 	{
 		uint8_t isim[DW_RECETE_ISIM_SIZE] 		= {0x4B,0x45,0x49,0x4E,0x20,0x4E,0x41,0x4D,0x45,0};
+		for(int i=0;i<DW_RECETE_ISIM_SIZE;i++)
+			defaultRecete_isim[i] = isim[i];
+	}
+	else if(registerTable[DW_PARAM_DIL_ADR] == DW_DIL_ESPANYOL_VAL)
+	{
+		uint8_t isim[DW_RECETE_ISIM_SIZE] 		= {0x53,0x49,0x4E,0x20,0x4E,0x4F,0x4D,0x42,0x52,0x45};
 		for(int i=0;i<DW_RECETE_ISIM_SIZE;i++)
 			defaultRecete_isim[i] = isim[i];
 	}
