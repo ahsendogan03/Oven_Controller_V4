@@ -2482,7 +2482,7 @@ void DWIN_anaSayfa(void)
 			{
 				registerTable[REG_DW_MODE_INFO_ADR] = DW_MANUEL_MODE_ENTER;
 
-				setOut(K14, data);
+				setOut(K14|K11, data);
 				PID_Setup();
 
 			}
@@ -3213,7 +3213,7 @@ void DWIN_receteSayfa(void)
 					DWIN_writeRegiser(&writeData, adim_anim_list[i], sizeof(writeData));
 				}
 
-				setOut(K14, data);
+				setOut(K14|K11, data);
 				PID_Setup();
 
 			break;
@@ -3701,7 +3701,7 @@ void DWIN_otomatikPisirmeBaslatmaCheck(void)
 				parse16BitTo8Bit(ustSicaklik_u16, &ustSicaklik_u8[0], &ustSicaklik_u8[1]);
 				parse16BitTo8Bit(altSicaklik_u16, &altSicaklik_u8[0], &altSicaklik_u8[1]);
 
-				setOut(K14, 1);
+				setOut(K14|K11, 1);
 				PID_Setup();
 
 
@@ -4033,7 +4033,7 @@ void DWIN_resetManuelPisirme(void)
 	ustOnTurbo 		= 0;
 	alarmBuzzerPeriod = 1000;
 
-	setOut(K8|K6|K9|BUZZER|K1|K2|K3|K4|K5|K6|K14|K10, 0);
+	setOut(K8|K6|K9|BUZZER|K1|K2|K3|K4|K5|K6|K14|K10|K11, 0);
 
 
 	uint16_t data;
@@ -4187,7 +4187,7 @@ void DWIN_arızaCheck(void)
 	{
 		registerTable[DW_ARIZA_PAGE_ADR] = 1;
 		DWIN_changePage(DW_ARIZA_PAGE_ADR);
-		setOut(K1|K2|K3|K4|K5|K6, 0);
+		setOut(K1|K2|K3|K4|K5|K6|K7|K8|K9|K11, 0);
 		setOut(K10, 1);
 		pisirmeSonuAlarmFlag = 1;
 		alarmBuzzerPeriod = 200;
