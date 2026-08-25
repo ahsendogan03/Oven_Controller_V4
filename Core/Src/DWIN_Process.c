@@ -2283,6 +2283,7 @@ void DWIN_testSayfa(void)
 
 		DWIN_writeRegiser(writeData, DW_TEST_1KHZ_ADR, sizeof(writeData));
 	}
+
 	else if((addr >= DW_TEST_OUT2_3V_ADR)&&(addr <= DW_TEST_OUT2_9V_ADR))
 	{
 		uint16_t writeData[3] = {0};

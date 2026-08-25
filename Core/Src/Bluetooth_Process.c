@@ -825,7 +825,7 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 						DWIN_changePage(DW_PAGE_MANUEL_BUHARVAR_CIFTTC_ADR);			// Manuel - cift tc buhar var
 				}
 
-				setOut(K14, data);
+				setOut(K14|K11, data);
 			}
 
 
@@ -1423,7 +1423,7 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 					DWIN_writeRegiser(&writeData, adim_anim_list[i], sizeof(writeData));
 				}
 
-				setOut(K14, data);
+				setOut(K14|K11, data);
 				PID_Setup();
 			}
 
