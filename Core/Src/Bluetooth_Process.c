@@ -920,6 +920,8 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 			parse16BitTo8Bit(data, &data2[0], &data2[1]);
 			EEPROM_Write(&hi2c1, DW_UST_SICAKLIK_SET_ADR, data2, sizeof(data2));
 
+			PID_Setup();
+
 
 		break;
 
@@ -931,6 +933,8 @@ void Bluetooth_dwinWrite(uint16_t addr, uint16_t value)
 
 			parse16BitTo8Bit(data, &data2[0], &data2[1]);
 			EEPROM_Write(&hi2c1, DW_ALT_SICAKLIK_SET_ADR, data2, sizeof(data2));
+
+			PID_Setup();
 
 
 		break;
