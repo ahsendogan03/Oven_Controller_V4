@@ -4278,7 +4278,7 @@ void DWIN_buharHazirCheck(void)
 			uint16_t data = 2;
 			DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
 
-			setOut(K8|K6, 0);
+			setOut(K6,0);
 		}
 
 		if((counterTick.buharHazir < 100) && (registerTable[DW_BUHAR_HAZIRLAMA_ADR] == 1) && (registerTable[DW_BUHAR_HAZIR_ANIM] == 2))
@@ -4287,7 +4287,7 @@ void DWIN_buharHazirCheck(void)
 			uint16_t data = 1;
 			DWIN_writeRegiser(&data, DW_BUHAR_HAZIR_ANIM, sizeof(data));
 
-			setOut(K8|K6, 1);
+			setOut(K6,1);
 		}
 	}
 
