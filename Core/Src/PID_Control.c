@@ -17,6 +17,7 @@
 
 
 uint16_t pwm_counter = 0; // Ortak sayaç (1000 ms için)
+uint32_t relay_pwm_counter = 0;
 
 uint8_t pwm1_duty = 0;
 uint8_t pwm2_duty = 0;
@@ -361,29 +362,79 @@ void TempSetPoint_Arrive_Check(void)
 
 void manual_pwm_update(void)
 {
-	if(((registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER)||(registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER))&&
-		(registerTable[DW_ARIZA_PAGE_ADR] != 1))
-	{
-		// PWM1
-		if (pwm_counter < (pwm1_duty * 10))
-			setOutData(K2, 1);
-		else
-			setOutData(K2, 0);
+    if(((registerTable[REG_DW_MODE_INFO_ADR] == DW_MANUEL_MODE_ENTER) ||
+        (registerTable[REG_DW_MODE_INFO_ADR] == DW_RECETE_PISIRME_SAYFA_ENTER)) &&
+       (registerTable[DW_ARIZA_PAGE_ADR] != 1))
+    {
+        // PWM1
+        if (pwm_counter < (pwm1_duty * 10))
+            setOutData(K2, 1);
+        else
+            setOutData(K2, 0);
 
 
-		// PWM2
-		if (pwm_counter < (pwm2_duty * 10))
-			setOutData(K4, 1);
-		else
-			setOutData(K4, 0);
+        // PWM2
+        if (pwm_counter < (pwm2_duty * 10))
+            setOutData(K4, 1);
+        else
+            setOutData(K4, 0);
 
 
-		// Sayaç güncelleme
-		pwm_counter++;
-		if (pwm_counter >= 1000) {
-			pwm_counter = 0;
-		}
-	}
+        // Sayaç güncelleme
+        pwm_counter++;
+        if (pwm_counter >= 1000) {
+            pwm_counter = 0;
+        }
+
+
+        // ----------------------------------------------------
+        // K1 - 60 saniyelik duty kontrolü
+        // ----------------------------------------------------
+        if (pwm1_duty < 10)
+        {
+            setOutData(K1, 0);
+        }
+        else if (pwm1_duty > 90)
+        {
+            setOutData(K1, 1);
+        }
+        else
+        {
+            if (relay_pwm_counter < ((uint32_t)pwm1_duty * 600))
+                setOutData(K1, 1);
+            else
+                setOutData(K1, 0);
+        }
+
+
+        // ----------------------------------------------------
+        // K3 - 60 saniyelik duty kontrolü
+        // ----------------------------------------------------
+        if (pwm2_duty < 10)
+        {
+            setOutData(K3, 0);
+        }
+        else if (pwm2_duty > 90)
+        {
+            setOutData(K3, 1);
+        }
+        else
+        {
+            if (relay_pwm_counter < ((uint32_t)pwm2_duty * 600))
+                setOutData(K3, 1);
+            else
+                setOutData(K3, 0);
+        }
+
+
+        // 60 saniyelik röle PWM sayacı
+        relay_pwm_counter++;
+
+        if (relay_pwm_counter >= 60000)
+        {
+            relay_pwm_counter = 0;
+        }
+    }
 }
 
 void pwmOutProcess(void)
